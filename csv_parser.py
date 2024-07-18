@@ -1690,7 +1690,7 @@ class CSVParser():
                             continue
                         log.success(f'Successfully added asset(s) info to finding!')
 
-    def save_data_as_ptrac(self, folder_path:str="exported-ptracs", file_name:str|None=None) -> None:
+    def save_data_as_ptrac(self, folder_path:str="exported_ptracs", file_name:str|None=None) -> None:
         """
         Creates and adds all relevant data to generate a ptrac file for each report found while parsing
 

@@ -362,7 +362,7 @@ if __name__ == '__main__':
     with open("config.yaml", 'r') as f:
         args = yaml.safe_load(f)
 
-    export_folder_path = "exported-ptracs"
+    export_folder_path = "exported_ptracs"
     try:
         os.mkdir(export_folder_path)
     except FileExistsError as e:
@@ -466,4 +466,4 @@ if __name__ == '__main__':
         parser.save_data_as_ptrac(folder_path=export_folder_path)
         # time.sleep(1) # required to have a minimum 1 sec delay since unique file names COULD be determined by timestamp
 
-        log.info(f'Ptrac(s) creation complete. File(s) can be found in \'exported-ptracs\' folder. Additional logs were added to {log.LOGS_FILE_PATH}')
+        log.info(f'Ptrac(s) creation complete. File(s) can be found in \'{export_folder_path}\' folder. Additional logs were added to {log.LOGS_FILE_PATH}')

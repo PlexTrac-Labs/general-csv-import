@@ -221,7 +221,9 @@ def generate_flaw_id(title: str) -> int:
 
 def increment_file_name(file_name, existing_files):
     """
-    return the file name without extension
+    takes file name with extension
+    
+    return unique file name (possible appended number) without extension
     """
     base_name, extension = os.path.splitext(file_name)
     if base_name in existing_files:
