@@ -1,7 +1,7 @@
 # Requirements
 - [Python 3+](https://www.python.org/downloads/)
 - [pip](https://pip.pypa.io/en/stable/installation/)
-- [pipenv](https://pipenv.pypa.io/en/latest/install/)
+- [pipenv](https://pipenv.pypa.io/en/latest/)
 
 # Installing
 After installing Python, pip, and pipenv, run the following commands to setup the Python virtual environment.
