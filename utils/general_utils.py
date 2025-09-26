@@ -64,7 +64,7 @@ def try_parsing_date(possible_date_str: str) -> time.struct_time:
     :rtype: time.struct_time
     """
     error = None
-    accepted_data_formats = ['%m/%d/%Y', '%m-%d-%Y', '%m/%d/%y', '%m-%d-%y', '%Y/%m/%d', '%Y-%m-%d', '%m/%d/%Y %I:%M:%S %p']
+    accepted_data_formats = ['%m/%d/%Y', '%m-%d-%Y', '%m/%d/%y', '%m-%d-%y', '%Y/%m/%d', '%Y-%m-%d', '%m/%d/%Y %I:%M:%S %p', '%m/%d/%Y %H:%M']
     for fmt in accepted_data_formats:
         try:
             return time.strptime(possible_date_str, fmt)
@@ -101,7 +101,7 @@ def is_str_positive_integer(value: str) -> bool:
     """
     try:
         value = int(value)
-        if value < 1:
+        if value < 0:
             raise ValueError
     except ValueError as e:
         return False
@@ -110,15 +110,26 @@ def is_str_positive_integer(value: str) -> bool:
 
 def is_valid_ipv4_address(address: str) -> bool:
     """
-    Checks if a string has the correct IPv4 format.
+    Checks if a string has the correct IPv4 format by splitting and validating parts.
 
-    :param address: ipv4 string to check
+    :param address: IPv4 string to check
     :type address: str
     :return: boolean result of validation
     :rtype: bool
     """
-    ipv4_pattern = re.compile(r'^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$')
-    return ipv4_pattern.match(address) is not None
+    parts = address.split(".")
+    if len(parts) != 4:
+        return False
+    for part in parts:
+        if not part.isdigit():
+            return False
+        num = int(part)
+        if num < 0 or num > 255:
+            return False
+        # Leading zeros are invalid (e.g., "01")
+        if len(part) > 1 and part[0] == "0":
+            return False
+    return True
 
 
 def is_valid_ipv6_address(address: str) -> bool:
