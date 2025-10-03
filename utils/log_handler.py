@@ -86,7 +86,11 @@ class LogFormatHandler():
     A class to act as an interface to the python logger and handle adding font colors depending on log level
     """
     def __init__(self, stream_level, file_level=logging.WARN, output_to_file=False):
-        self.LOGS_FILE_PATH = f'logs_{time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(time.time()))}.txt'
+        try:
+            os.mkdir("logs")
+        except FileExistsError as e:
+            pass
+        self.LOGS_FILE_PATH = f'logs/log_{time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(time.time()))}.txt'
 
         lger = logging.getLogger()
         lger.setLevel(logging.DEBUG) # do not change - logging level set individually below
