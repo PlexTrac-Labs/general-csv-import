@@ -723,7 +723,9 @@ class CSVParser():
         },
         'tags': ["custom_csv_import"],
         'affected_assets': {},
-        'assets': []
+        'assets': [],
+        'exhibits': [],
+        'id': None,
     }
     #--- END FINDING---
 
@@ -1648,6 +1650,8 @@ class CSVParser():
                     payload.pop("client_sid")
                     payload.pop("report_sid")
                     payload.pop("affected_asset_sid")
+                    payload.pop("exhibits", None)
+                    payload.pop("id", None)
                     log.info(f'Creating finding <{payload["title"]}>')
                     response = api.findings.create_finding(auth.base_url, auth.get_auth_headers(), client_id, report_id, payload)
                     if response.json.get("message") != "success":
@@ -1757,6 +1761,8 @@ class CSVParser():
                     # when importing data from a ptrac a finding does not go through the normal finding validation checks that are run when a finding is created
                     # metadata
                     finding_info['flaw_id'] = utils.generate_flaw_id(finding_info['title'])
+                    finding_info['id'] = finding_info['flaw_id']
+                    finding_info['exhibits'] = []
                     finding_info['doc_type'] = "flaw"
                     finding_info['source'] = "plextrac"
                     finding_info['visibility'] = "published"
