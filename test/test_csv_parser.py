@@ -288,3 +288,13 @@ def test_save_data_as_ptrac_can_return_ptrac_jsons_without_writing_files():
     assert ptracs[0]["report_info"]["name"] == "Report"
     assert ptracs[0]["flaws_array"][0]["title"] == "Finding"
     assert ptracs[0]["flaws_array"][0]["last_update"] == parser.parser_time_milliseconds
+
+
+def test_parser_initializes_object_lookup_maps():
+    parser = CSVParser()
+
+    assert parser.client_lookup == {}
+    assert parser.report_lookup == {}
+    assert parser.finding_lookup == {}
+    assert parser.asset_lookup == {}
+    assert parser.evidence_lookup == {}

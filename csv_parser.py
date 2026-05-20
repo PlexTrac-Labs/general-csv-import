@@ -810,6 +810,11 @@ class CSVParser():
         self.assets = {}
         self.affected_assets = {}
         self.evidence = {}
+
+        self.client_lookup = {}
+        self.report_lookup = {}
+        self.finding_lookup = {}
+        self.asset_lookup = {}
         self.evidence_lookup = {}
 
         self.client_template['name'] = f'client_name_{self.parser_date}'
@@ -1224,26 +1229,18 @@ class CSVParser():
         Returns the client sid and name of existing client or
         Creates new client and adds all csv column data that relates to the client
         """
-        matching_clients = []
-
-        # filter for matching clients
         header = self.get_header_from_key("client_name")
         if header == None:
-            matching_clients = list(filter(lambda x: (self.client_template['name'] == str(x['name'])), self.clients.values()))
+            client_name = self.client_template['name']
         else:
             index = self.get_index_from_header(header)
             value = row[index] # TODO there could be an index problem if client_name is NOT used as a mapping_key in self.csv_headers_mapping_template - currently handled elsewhere
+            client_name = value if value != "" else self.client_template['name']
 
-            if value == "":
-                matching_clients = list(filter(lambda x: (self.client_template['name'] == str(x['name'])), self.clients.values()))
-            else:
-                matching_clients = list(filter(lambda x: (str(value) in str(x['name'])), self.clients.values()))
-
-        # return matched client
-        if len(matching_clients) > 0:
-            client = matching_clients[0]
-            log.info(f'Found existing client {client["name"]}')
-            return client['sid'], client['name']
+        if client_name in self.client_lookup:
+            client_sid = self.client_lookup[client_name]
+            log.info(f'Found existing client {self.clients[client_sid]["name"]}')
+            return client_sid, self.clients[client_sid]['name']
 
         # return new client
         log.info(f'No client found. Creating new client...')
@@ -1254,6 +1251,7 @@ class CSVParser():
         self.add_data_to_object(client, "CLIENT", row)
 
         self.clients[new_sid] = client
+        self.client_lookup[client['name']] = new_sid
 
         return new_sid, client['name']
 
@@ -1268,32 +1266,19 @@ class CSVParser():
         Returns the report sid and name of existing report or
         Creates new report and adds all csv column data that relates to the report
         """
-        matching_reports = []
-
-        # filter for matching reports
         header = self.get_header_from_key("report_name")
         if header == None:
-            matching_reports = self.reports.values()
-            matching_reports = filter(lambda x: (x['client_sid'] == client_sid), matching_reports)
-            matching_reports = list(filter(lambda x: (self.report_template['name'] in str(x['name'])), matching_reports))
+            report_name = self.report_template['name']
         else:
             index = self.get_index_from_header(header)
             value = row[index] # TODO there could be an index problem if report_name is NOT used as a mapping_key in self.csv_headers_mapping_template - currently handled elsewhere
+            report_name = value if value != "" else self.report_template['name']
 
-            if value == "":
-                matching_reports = self.reports.values()
-                matching_reports = filter(lambda x: (x['client_sid'] == client_sid), matching_reports)
-                matching_reports = list(filter(lambda x: (self.report_template['name'] in str(x['name'])), matching_reports))
-            else:
-                matching_reports = self.reports.values()
-                matching_reports = filter(lambda x: (x['client_sid'] == client_sid), matching_reports)
-                matching_reports = list(filter(lambda x: (str(value) in str(x['name'])), matching_reports))
-
-        # return matched report
-        if len(matching_reports) > 0:
-            report = matching_reports[0]
-            log.info(f'Found existing report {report["name"]}')
-            return report['sid'], report['name']
+        lookup_key = (client_sid, report_name)
+        if lookup_key in self.report_lookup:
+            report_sid = self.report_lookup[lookup_key]
+            log.info(f'Found existing report {self.reports[report_sid]["name"]}')
+            return report_sid, self.reports[report_sid]['name']
 
         # return new report
         log.info(f'No report found. Creating new report...')
@@ -1306,6 +1291,7 @@ class CSVParser():
 
         self.reports[new_sid] = report
         self.clients[client_sid]['reports'].append(new_sid)
+        self.report_lookup[(client_sid, report['name'])] = new_sid
 
         return new_sid, report['name']
 
@@ -1321,17 +1307,11 @@ class CSVParser():
 
         Returns the finding sid and name of the new finding
         """
-        matching_findings = list(self.findings.values())
-        matching_findings = filter(lambda x: (x['client_sid'] == client_sid), matching_findings)
-        matching_findings = filter(lambda x: (x['report_sid'] == report_sid), matching_findings)
-
-        # filter for matching findings by title
         header = self.get_header_from_key('finding_title')
-
         index = self.get_index_from_header(header)
         value = row[index] # TODO there is checking in the parse_data func to prevent index errors here
-
-        matching_findings = list(filter(lambda x: (value == x['title']), matching_findings))
+        lookup_key = (client_sid, report_sid, value)
+        matching_findings = self.finding_lookup.get(lookup_key, [])
 
         # return finding
         new_sid = uuid4()
@@ -1345,6 +1325,9 @@ class CSVParser():
 
         self.findings[new_sid] = finding
         self.reports[report_sid]['findings'].append(new_sid)
+        if lookup_key not in self.finding_lookup:
+            self.finding_lookup[lookup_key] = []
+        self.finding_lookup[lookup_key].append(new_sid)
 
         return new_sid, finding['title']
 
@@ -1370,9 +1353,8 @@ class CSVParser():
         for asset_name in value.split(","):
             asset_name = asset_name.strip()
 
-            matching_assets = list(self.assets.values())
-            matching_assets = filter(lambda x: (x['client_sid'] == client_sid), matching_assets)
-            matching_assets = list(filter(lambda x: (asset_name == x['asset']), matching_assets))
+            lookup_key = (client_sid, asset_name)
+            matching_assets = self.asset_lookup.get(lookup_key, [])
 
             # create asset
             new_sid = uuid4()
@@ -1382,7 +1364,7 @@ class CSVParser():
             asset['finding_sid'] = finding_sid
             asset['dup_num'] = len(matching_assets) + 1
             if len(matching_assets) > 0:
-                asset['original_asset_sid'] = matching_assets[0]['sid']
+                asset['original_asset_sid'] = matching_assets[0]
 
             self.set_value(asset, ['asset'], asset_name)
             asset['is_multi'] = True
@@ -1390,6 +1372,9 @@ class CSVParser():
             self.assets[new_sid] = asset
             self.clients[client_sid]['assets'].append(new_sid)
             self.findings[finding_sid]['assets'].append(new_sid)
+            if lookup_key not in self.asset_lookup:
+                self.asset_lookup[lookup_key] = []
+            self.asset_lookup[lookup_key].append(new_sid)
 
 
     def handle_asset(self, row, client_sid, finding_sid):
@@ -1403,9 +1388,6 @@ class CSVParser():
 
         Returns the asset sid and name of the new asset
         """
-        matching_assets = list(self.assets.values())
-        matching_assets = filter(lambda x: (x['client_sid'] == client_sid), matching_assets)
-
         header = self.get_header_from_key('asset_name')
         if header == None:
             return None, None
@@ -1418,7 +1400,8 @@ class CSVParser():
         if value == "":
             return None, None
 
-        matching_assets = list(filter(lambda x: (value == x['asset']), matching_assets))
+        lookup_key = (client_sid, value)
+        matching_assets = self.asset_lookup.get(lookup_key, [])
 
         # return asset
         new_sid = uuid4()
@@ -1428,7 +1411,7 @@ class CSVParser():
         asset['finding_sid'] = finding_sid
         asset['dup_num'] = len(matching_assets) + 1
         if len(matching_assets) > 0:
-            asset['original_asset_sid'] = matching_assets[0]['sid']
+            asset['original_asset_sid'] = matching_assets[0]
 
         self.add_data_to_object(asset, "ASSET", row)
 
@@ -1439,6 +1422,9 @@ class CSVParser():
         self.assets[new_sid] = asset
         self.clients[client_sid]['assets'].append(new_sid)
         self.findings[finding_sid]['assets'].append(new_sid)
+        if lookup_key not in self.asset_lookup:
+            self.asset_lookup[lookup_key] = []
+        self.asset_lookup[lookup_key].append(new_sid)
 
         return new_sid, asset['asset']
 
