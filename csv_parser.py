@@ -162,7 +162,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['assignedTo']
+            'path': ['assignedTo'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
             # format email
         },
         'finding_created_at': {
@@ -171,7 +173,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "DATE_EPOCH",
             'input_blanks': False,
-            'path': ['createdAt'] # validate
+            'path': ['createdAt'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_closed_at': {
             'id': 'finding_closed_at',
@@ -179,7 +183,19 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "DATE_EPOCH",
             'input_blanks': False,
-            'path': ['closedAt'] # validate
+            'path': ['closedAt'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
+        },
+        'finding_last_updated_at': {
+            'id': 'finding_last_updated_at',
+            'object_type': 'FINDING',
+            'data_type' : 'DETAIL',
+            'validation_type': "DATE_EPOCH",
+            'input_blanks': False,
+            'path': ['last_update'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_description': {
             'id': 'finding_description',
@@ -187,7 +203,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['description']
+            'path': ['description'],
+            'merge_type': 'RICH_TEXT',
+            'merge_override': None,
         },
         'finding_recommendations': {
             'id': 'finding_recommendations',
@@ -195,7 +213,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['recommendations']
+            'path': ['recommendations'],
+            'merge_type': 'RICH_TEXT',
+            'merge_override': None,
         },
         'finding_references': {
             'id': 'finding_references',
@@ -203,7 +223,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['references']
+            'path': ['references'],
+            'merge_type': 'RICH_TEXT',
+            'merge_override': None,
         },
         'finding_severity': {
             'id': 'finding_severity',
@@ -211,7 +233,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "SEVERITY",
             'input_blanks': False,
-            'path': ['severity'] # validate
+            'path': ['severity'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_status': {
             'id': 'finding_status',
@@ -219,7 +243,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "STATUS",
             'input_blanks': False,
-            'path': ['status'] # validate
+            'path': ['status'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_sub_status': {
             'id': 'finding_sub_status',
@@ -227,7 +253,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['subStatus']
+            'path': ['subStatus'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_tag': {
             'id': 'finding_tag',
@@ -235,7 +263,9 @@ class CSVParser():
             'data_type' : 'TAG',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['tags']
+            'path': ['tags'],
+            'merge_type': 'LIST',
+            'merge_override': None,
         },
         'finding_multi_tag': {
             'id': 'finding_multi_tag',
@@ -243,7 +273,9 @@ class CSVParser():
             'data_type' : 'MULTI_TAG',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['tags']
+            'path': ['tags'],
+            'merge_type': 'LIST',
+            'merge_override': None,
         },
         'finding_title': {
             'id': 'finding_title',
@@ -251,7 +283,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['title']
+            'path': ['title'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_custom_field': {
             'id': 'finding_custom_field',
@@ -259,7 +293,9 @@ class CSVParser():
             'data_type' : 'KEY_CUSTOM_FIELD',
             'validation_type': None,
             'input_blanks': True,
-            'path': ['fields']
+            'path': ['fields'],
+            'merge_type': 'RICH_TEXT',
+            'merge_override': None,
         },
         # cvss scores
         'finding_cvss3_1_overall': {
@@ -268,7 +304,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': 'FLOAT', # validate
             'input_blanks': False,
-            'path': ['risk_score', 'CVSS3_1', 'overall']
+            'path': ['risk_score', 'CVSS3_1', 'overall'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss3_1_vector': {
             'id': 'finding_cvss3_1_vector',
@@ -276,7 +314,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': 'CVSS_VECTOR', # validate
             'input_blanks': False,
-            'path': ['risk_score', 'CVSS3_1', 'vector']
+            'path': ['risk_score', 'CVSS3_1', 'vector'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss3_vector': {
             'id': 'finding_cvss3_vector',
@@ -284,7 +324,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss3', 'calculation']
+            'path': ['fields', 'scores', 'cvss3', 'calculation'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss3_value': {
             'id': 'finding_cvss3_value',
@@ -292,7 +334,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss3', 'value']
+            'path': ['fields', 'scores', 'cvss3', 'value'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss3_label': {
             'id': 'finding_cvss3_label',
@@ -300,7 +344,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss3', 'label']
+            'path': ['fields', 'scores', 'cvss3', 'label'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss2_vector': {
             'id': 'finding_cvss2_vector',
@@ -308,7 +354,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss', 'calculation']
+            'path': ['fields', 'scores', 'cvss', 'calculation'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss2_value': {
             'id': 'finding_cvss2_value',
@@ -316,7 +364,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss', 'value']
+            'path': ['fields', 'scores', 'cvss', 'value'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss2_label': {
             'id': 'finding_cvss2_label',
@@ -324,7 +374,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss', 'label']
+            'path': ['fields', 'scores', 'cvss', 'label'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss_general_vector': {
             'id': 'finding_cvss_general_vector',
@@ -332,7 +384,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'general', 'calculation']
+            'path': ['fields', 'scores', 'general', 'calculation'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss_general_value': {
             'id': 'finding_cvss_general_value',
@@ -340,7 +394,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'general', 'value']
+            'path': ['fields', 'scores', 'general', 'value'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss_general_label': {
             'id': 'finding_cvss_general_label',
@@ -348,7 +404,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'general', 'label']
+            'path': ['fields', 'scores', 'general', 'label'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cve': {
             'id': 'finding_cve_name',
@@ -356,7 +414,9 @@ class CSVParser():
             'data_type' : 'CVE',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['common_identifiers', 'CVE', 'INDEX']
+            'path': ['common_identifiers', 'CVE', 'INDEX'],
+            'merge_type': 'LIST',
+            'merge_override': None,
             # format CVE-2022-12345
         },
         'finding_cwe': {
@@ -365,7 +425,9 @@ class CSVParser():
             'data_type' : 'CWE',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['common_identifiers', 'CWE', 'INDEX']
+            'path': ['common_identifiers', 'CWE', 'INDEX'],
+            'merge_type': 'LIST',
+            'merge_override': None,
             # format number i.e. 501
         },
         # ASSET INFO
@@ -603,6 +665,14 @@ class CSVParser():
             'input_blanks': False,
             'path': ['locationUrl']
         },
+        'affected_asset_evidence': {
+            'id': 'affected_asset_evidence',
+            'object_type': 'AFFECTED_ASSET',
+            'data_type' : 'EVIDENCE',
+            'validation_type': None,
+            'input_blanks': False,
+            'path': ['evidence', 'INDEX']
+        },
         # AFFECTED ASSET PORT DATA
         'affected_asset_port_number': {
             'id': 'affected_asset_port_number',
@@ -760,11 +830,12 @@ class CSVParser():
     #--- END Asset---
 
 
-    def __init__(self):
+    def __init__(self, header_mapping=None):
         """
         
         """
-        self.csv_headers_mapping: dict = deepcopy(self.csv_headers_mapping_template)
+        self.data_mapping = deepcopy(self.data_mapping)
+        self.csv_headers_mapping: dict = deepcopy(header_mapping) if header_mapping is not None else deepcopy(self.csv_headers_mapping_template)
         self.csv_data: list = None
         self.parser_progress: int = None
 
@@ -777,6 +848,10 @@ class CSVParser():
 
         self.doc_version = None
 
+        self.finding_merge_strategy = None
+        self.finding_merge_sid_map = {}
+        self.asset_merge_strategy = None
+
         self.client_template = deepcopy(self.client_template_mock)
         self.report_template = deepcopy(self.report_template_mock)
         self.finding_template = deepcopy(self.finding_template_mock)
@@ -787,6 +862,13 @@ class CSVParser():
         self.findings = {}
         self.assets = {}
         self.affected_assets = {}
+        self.evidence = {}
+
+        self.client_lookup = {}
+        self.report_lookup = {}
+        self.finding_lookup = {}
+        self.asset_lookup = {}
+        self.evidence_lookup = {}
 
         self.client_template['name'] = f'client_name_{self.parser_date}'
         self.report_template['name'] = f'report_name_{self.parser_date}'
@@ -820,6 +902,13 @@ class CSVParser():
             if mapping_key == value['mapping_key']:
                 return value['header']
         return None
+
+    def set_finding_merge_strategy(self, strategy: str):
+        if strategy not in ["title", "user_defined_fields", "all_fields"]:
+            log.warning(f"Incorrect key value '{strategy}': Unknown findings merge strategy, accepted values [\"title\", \"user_defined_fields\", \"all_fields\"]\nWill not merge findings...")
+            return
+        self.finding_merge_strategy = strategy
+        self.asset_merge_strategy = strategy
     #----------End getters and setter----------
 
 
@@ -857,10 +946,236 @@ class CSVParser():
         Runs through all findings and updates the titles for any duplicates.
         Cannot be done during parsing since we still have to look for duplicates there
         """
+        if self.finding_merge_strategy:
+            merged_findings = {}
+
+            findings_by_report = {}
+            for finding_sid, finding in self.findings.items():
+                report_sid = finding['report_sid']
+                if report_sid not in findings_by_report:
+                    findings_by_report[report_sid] = {}
+                findings_by_report[report_sid][finding_sid] = finding
+
+            for report in self.reports.values():
+                report_sid = report['sid']
+                if report_sid in findings_by_report:
+                    merged_findings.update(self.combine_findings(findings_by_report[report_sid], self.finding_merge_strategy))
+
+            self.findings = merged_findings
+
+            for report in self.reports.values():
+                new_finding_sids = []
+                seen_sids = set()
+                for finding_sid in report['findings']:
+                    mapped_sid = self.finding_merge_sid_map.get(finding_sid, finding_sid)
+                    if mapped_sid not in seen_sids:
+                        new_finding_sids.append(mapped_sid)
+                        seen_sids.add(mapped_sid)
+                self.reports[report['sid']]['findings'] = new_finding_sids
+
+            for asset in self.assets.values():
+                if asset['finding_sid'] in self.finding_merge_sid_map:
+                    self.assets[asset['sid']]['finding_sid'] = self.finding_merge_sid_map[asset['finding_sid']]
+
+            title_groups = {}
+            for finding in self.findings.values():
+                title = finding['title']
+                if title not in title_groups:
+                    title_groups[title] = []
+                title_groups[title].append(finding)
+
+            for findings in title_groups.values():
+                if len(findings) > 1:
+                    findings.sort(key=lambda x: x['dup_num'])
+                    for i, finding in enumerate(findings, 1):
+                        finding['dup_num'] = i
+
         for f in self.findings.values():
             if f['dup_num'] > 1:
                 f['title'] = f'{f["title"]} ({f["dup_num"]})'
             f.pop("dup_num")
+
+
+    def combine_findings(self, finding_list_to_merge, merge_strategy: str):
+        current_mapping_keys = [x['mapping_key'] for x in self.csv_headers_mapping.values()]
+        filtered_data_mappings = {k: v for k, v in self.data_mapping.items() if k in current_mapping_keys}
+        if not filtered_data_mappings:
+            filtered_data_mappings = {k: v for k, v in self.data_mapping.items() if v['object_type'] == "FINDING"}
+
+        scalar_paths = [v['path'] for v in filtered_data_mappings.values() if v['object_type'] == "FINDING" and v['merge_type'] == "SCALAR"]
+        rich_text_paths = [v['path'] for v in filtered_data_mappings.values() if v['object_type'] == "FINDING" and v['merge_type'] == "RICH_TEXT"]
+        list_paths = [v['path'] for v in filtered_data_mappings.values() if v['object_type'] == "FINDING" and v['merge_type'] == "LIST"]
+        rich_text_exclusions = [['fields']]
+
+        def _get_path(obj, path):
+            cur = obj
+            for k in path:
+                if k == "INDEX":
+                    return cur
+                if isinstance(cur, dict) and k in cur:
+                    cur = cur[k]
+                else:
+                    return None
+            return cur
+
+        def _set_path(obj, path, value):
+            if len(path) == 1:
+                if path[0] != "INDEX":
+                    obj[path[0]] = value
+                return
+            if path[0] == "INDEX":
+                log.warning("Reached unexpected conditional code path, check fundamental script logic")
+                return
+            if path[0] not in obj:
+                obj[path[0]] = {}
+            _set_path(obj[path[0]], path[1:], value)
+
+        def _has_value(x):
+            if x is None:
+                return False
+            if isinstance(x, str):
+                return len(x) > 0
+            if isinstance(x, (list, tuple, set, dict)):
+                return len(x) > 0
+            return True
+
+        def _normalized_text(text):
+            if not isinstance(text, str):
+                return str(text)
+            text = re.sub(r'<[^>]+>', '', text)
+            text = re.sub(r'\s+', ' ', text)
+            return text.strip()
+
+        def _is_value_contained_in_base(base_value, inc_value):
+            if not base_value or not inc_value:
+                return False
+            return _normalized_text(inc_value) in _normalized_text(base_value)
+
+        def _merge_lists(a, b):
+            a = a or []
+            b = b or []
+            seen = set()
+            out = []
+
+            def _key(item):
+                try:
+                    hash(item)
+                    return ("H", item)
+                except TypeError:
+                    return ("U", json.dumps(item, sort_keys=True, default=str))
+
+            for item in a + b:
+                key = _key(item)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(item)
+            return out
+
+        def _are_matching(f1, f2) -> bool:
+            if merge_strategy == "title":
+                return True
+            if merge_strategy == "user_defined_fields":
+                return all(_get_path(f1, path) == _get_path(f2, path) for path in scalar_paths)
+            if merge_strategy == "all_fields":
+                return (
+                    all(_get_path(f1, path) == _get_path(f2, path) for path in scalar_paths)
+                    and all(_get_path(f1, path) == _get_path(f2, path) for path in rich_text_paths)
+                )
+            log.critical("Incorrect key value: Unknown findings merge strategy")
+            exit(1)
+
+        def _merge_findings(base: dict, incoming: dict):
+            merged = deepcopy(base)
+
+            for path in scalar_paths:
+                base_val = _get_path(merged, path)
+                inc_val = _get_path(incoming, path)
+                if not _has_value(base_val) and _has_value(inc_val):
+                    _set_path(merged, path, inc_val)
+
+            for path in rich_text_paths:
+                if path in rich_text_exclusions:
+                    continue
+                base_val = _get_path(merged, path)
+                inc_val = _get_path(incoming, path)
+                if merge_strategy == "user_defined_fields":
+                    if base_val and inc_val and base_val != inc_val:
+                        if not _is_value_contained_in_base(base_val, inc_val):
+                            _set_path(merged, path, f"{base_val}\n{inc_val}")
+                    elif not base_val and inc_val:
+                        _set_path(merged, path, inc_val)
+                elif not base_val and inc_val:
+                    _set_path(merged, path, inc_val)
+
+            base_fields = _get_path(merged, ["fields"])
+            inc_fields = _get_path(incoming, ["fields"])
+            if isinstance(base_fields, dict) and isinstance(inc_fields, dict):
+                for field_key, field_value in inc_fields.items():
+                    if field_key == "scores":
+                        continue
+                    if field_key not in base_fields:
+                        base_fields[field_key] = deepcopy(field_value)
+                        continue
+                    base_field = base_fields[field_key]
+                    if isinstance(base_field, dict) and isinstance(field_value, dict):
+                        base_value = base_field.get("value", "")
+                        inc_value = field_value.get("value", "")
+                        if base_value and inc_value and not _is_value_contained_in_base(base_value, inc_value):
+                            merged_field = deepcopy(base_field)
+                            merged_field["value"] = f"{base_value}\n{inc_value}"
+                            base_fields[field_key] = merged_field
+                        elif not base_value and inc_value:
+                            base_fields[field_key] = deepcopy(field_value)
+                    elif not _has_value(base_field):
+                        base_fields[field_key] = deepcopy(field_value)
+                _set_path(merged, ["fields"], base_fields)
+
+            for path in list_paths:
+                base_val = _get_path(merged, path)
+                inc_val = _get_path(incoming, path)
+                if isinstance(base_val, list) or isinstance(inc_val, list):
+                    _set_path(merged, path, _merge_lists(base_val, inc_val))
+
+            base_affected_asset_sid = _get_path(merged, ["affected_asset_sid"])
+            inc_affected_asset_sid = _get_path(incoming, ["affected_asset_sid"])
+            if isinstance(base_affected_asset_sid, dict) and isinstance(inc_affected_asset_sid, dict):
+                _set_path(merged, ["affected_asset_sid"], {**base_affected_asset_sid, **inc_affected_asset_sid})
+
+            base_assets = _get_path(merged, ["assets"])
+            inc_assets = _get_path(incoming, ["assets"])
+            if isinstance(base_assets, list) or isinstance(inc_assets, list):
+                _set_path(merged, ["assets"], _merge_lists(base_assets, inc_assets))
+
+            return merged
+
+        finding_groups = {}
+        for finding in finding_list_to_merge.values():
+            finding_title = finding['title']
+            if finding_title not in finding_groups:
+                finding_groups[finding_title] = {}
+            finding_groups[finding_title][finding['sid']] = finding
+
+        new_findings = {}
+        for group in finding_groups.values():
+            remaining = list(group.keys())
+            while remaining:
+                canonical_sid = remaining[0]
+                canonical = deepcopy(group[canonical_sid])
+                remaining.remove(canonical_sid)
+
+                to_absorb = []
+                for sid in remaining:
+                    if _are_matching(canonical, group[sid]):
+                        to_absorb.append(sid)
+
+                for sid in to_absorb:
+                    canonical = _merge_findings(canonical, group[sid])
+                    self.finding_merge_sid_map[sid] = canonical_sid
+                    remaining.remove(sid)
+
+                new_findings[canonical_sid] = canonical
+
+        return new_findings
 
 
     def add_asset_to_finding(self, finding, asset, finding_sid, asset_sid):
@@ -878,7 +1193,29 @@ class CSVParser():
             affected_asset_fields = self.affected_assets[self.findings[finding_sid]['affected_asset_sid']]
         
         affected_asset.update(affected_asset_fields)
-        finding['affected_assets'][asset_id] = affected_asset
+
+        if asset_id in finding['affected_assets']:
+            existing_affected_asset = finding['affected_assets'][asset_id]
+            existing_affected_asset['status'] = affected_asset.get('status', existing_affected_asset.get('status'))
+            existing_affected_asset['locationUrl'] = affected_asset.get('locationUrl', "") if affected_asset.get('locationUrl', "") != "" else existing_affected_asset.get('locationUrl', "")
+            existing_affected_asset['ports'].update(affected_asset.get('ports', {}))
+            existing_affected_asset['vulnerableParameters'] = list(
+                set(existing_affected_asset.get('vulnerableParameters', []) + affected_asset.get('vulnerableParameters', []))
+            )
+
+            if self.asset_merge_strategy in ["user_defined_fields", "all_fields"]:
+                notes_1 = existing_affected_asset.get("notes", "")
+                notes_2 = affected_asset.get("notes", "")
+                if notes_1 and notes_2:
+                    existing_affected_asset['notes'] = f'{notes_1}\n{notes_2}'
+                else:
+                    existing_affected_asset['notes'] = notes_1 or notes_2
+            else:
+                existing_affected_asset['notes'] = affected_asset.get('notes', "") if affected_asset.get('notes', "") != "" else existing_affected_asset.get('notes', "")
+
+            finding['affected_assets'][asset_id] = existing_affected_asset
+        else:
+            finding['affected_assets'][asset_id] = affected_asset
 
         return finding
     
@@ -919,26 +1256,18 @@ class CSVParser():
         Returns the client sid and name of existing client or
         Creates new client and adds all csv column data that relates to the client
         """
-        matching_clients = []
-
-        # filter for matching clients
         header = self.get_header_from_key("client_name")
         if header == None:
-            matching_clients = list(filter(lambda x: (self.client_template['name'] == str(x['name'])), self.clients.values()))
+            client_name = self.client_template['name']
         else:
             index = self.get_index_from_header(header)
             value = row[index] # TODO there could be an index problem if client_name is NOT used as a mapping_key in self.csv_headers_mapping_template - currently handled elsewhere
+            client_name = value if value != "" else self.client_template['name']
 
-            if value == "":
-                matching_clients = list(filter(lambda x: (self.client_template['name'] == str(x['name'])), self.clients.values()))
-            else:
-                matching_clients = list(filter(lambda x: (str(value) in str(x['name'])), self.clients.values()))
-
-        # return matched client
-        if len(matching_clients) > 0:
-            client = matching_clients[0]
-            log.info(f'Found existing client {client["name"]}')
-            return client['sid'], client['name']
+        if client_name in self.client_lookup:
+            client_sid = self.client_lookup[client_name]
+            log.info(f'Found existing client {self.clients[client_sid]["name"]}')
+            return client_sid, self.clients[client_sid]['name']
 
         # return new client
         log.info(f'No client found. Creating new client...')
@@ -949,6 +1278,7 @@ class CSVParser():
         self.add_data_to_object(client, "CLIENT", row)
 
         self.clients[new_sid] = client
+        self.client_lookup[client['name']] = new_sid
 
         return new_sid, client['name']
 
@@ -963,32 +1293,19 @@ class CSVParser():
         Returns the report sid and name of existing report or
         Creates new report and adds all csv column data that relates to the report
         """
-        matching_reports = []
-
-        # filter for matching reports
         header = self.get_header_from_key("report_name")
         if header == None:
-            matching_reports = self.reports.values()
-            matching_reports = filter(lambda x: (x['client_sid'] == client_sid), matching_reports)
-            matching_reports = list(filter(lambda x: (self.report_template['name'] in str(x['name'])), matching_reports))
+            report_name = self.report_template['name']
         else:
             index = self.get_index_from_header(header)
             value = row[index] # TODO there could be an index problem if report_name is NOT used as a mapping_key in self.csv_headers_mapping_template - currently handled elsewhere
+            report_name = value if value != "" else self.report_template['name']
 
-            if value == "":
-                matching_reports = self.reports.values()
-                matching_reports = filter(lambda x: (x['client_sid'] == client_sid), matching_reports)
-                matching_reports = list(filter(lambda x: (self.report_template['name'] in str(x['name'])), matching_reports))
-            else:
-                matching_reports = self.reports.values()
-                matching_reports = filter(lambda x: (x['client_sid'] == client_sid), matching_reports)
-                matching_reports = list(filter(lambda x: (str(value) in str(x['name'])), matching_reports))
-
-        # return matched report
-        if len(matching_reports) > 0:
-            report = matching_reports[0]
-            log.info(f'Found existing report {report["name"]}')
-            return report['sid'], report['name']
+        lookup_key = (client_sid, report_name)
+        if lookup_key in self.report_lookup:
+            report_sid = self.report_lookup[lookup_key]
+            log.info(f'Found existing report {self.reports[report_sid]["name"]}')
+            return report_sid, self.reports[report_sid]['name']
 
         # return new report
         log.info(f'No report found. Creating new report...')
@@ -1001,6 +1318,7 @@ class CSVParser():
 
         self.reports[new_sid] = report
         self.clients[client_sid]['reports'].append(new_sid)
+        self.report_lookup[(client_sid, report['name'])] = new_sid
 
         return new_sid, report['name']
 
@@ -1016,17 +1334,11 @@ class CSVParser():
 
         Returns the finding sid and name of the new finding
         """
-        matching_findings = list(self.findings.values())
-        matching_findings = filter(lambda x: (x['client_sid'] == client_sid), matching_findings)
-        matching_findings = filter(lambda x: (x['report_sid'] == report_sid), matching_findings)
-
-        # filter for matching findings by title
         header = self.get_header_from_key('finding_title')
-
         index = self.get_index_from_header(header)
         value = row[index] # TODO there is checking in the parse_data func to prevent index errors here
-
-        matching_findings = list(filter(lambda x: (value == x['title']), matching_findings))
+        lookup_key = (client_sid, report_sid, value)
+        matching_findings = self.finding_lookup.get(lookup_key, [])
 
         # return finding
         new_sid = uuid4()
@@ -1040,6 +1352,9 @@ class CSVParser():
 
         self.findings[new_sid] = finding
         self.reports[report_sid]['findings'].append(new_sid)
+        if lookup_key not in self.finding_lookup:
+            self.finding_lookup[lookup_key] = []
+        self.finding_lookup[lookup_key].append(new_sid)
 
         return new_sid, finding['title']
 
@@ -1065,9 +1380,8 @@ class CSVParser():
         for asset_name in value.split(","):
             asset_name = asset_name.strip()
 
-            matching_assets = list(self.assets.values())
-            matching_assets = filter(lambda x: (x['client_sid'] == client_sid), matching_assets)
-            matching_assets = list(filter(lambda x: (asset_name == x['asset']), matching_assets))
+            lookup_key = (client_sid, asset_name)
+            matching_assets = self.asset_lookup.get(lookup_key, [])
 
             # create asset
             new_sid = uuid4()
@@ -1077,7 +1391,7 @@ class CSVParser():
             asset['finding_sid'] = finding_sid
             asset['dup_num'] = len(matching_assets) + 1
             if len(matching_assets) > 0:
-                asset['original_asset_sid'] = matching_assets[0]['sid']
+                asset['original_asset_sid'] = matching_assets[0]
 
             self.set_value(asset, ['asset'], asset_name)
             asset['is_multi'] = True
@@ -1085,6 +1399,9 @@ class CSVParser():
             self.assets[new_sid] = asset
             self.clients[client_sid]['assets'].append(new_sid)
             self.findings[finding_sid]['assets'].append(new_sid)
+            if lookup_key not in self.asset_lookup:
+                self.asset_lookup[lookup_key] = []
+            self.asset_lookup[lookup_key].append(new_sid)
 
 
     def handle_asset(self, row, client_sid, finding_sid):
@@ -1098,9 +1415,6 @@ class CSVParser():
 
         Returns the asset sid and name of the new asset
         """
-        matching_assets = list(self.assets.values())
-        matching_assets = filter(lambda x: (x['client_sid'] == client_sid), matching_assets)
-
         header = self.get_header_from_key('asset_name')
         if header == None:
             return None, None
@@ -1113,7 +1427,8 @@ class CSVParser():
         if value == "":
             return None, None
 
-        matching_assets = list(filter(lambda x: (value == x['asset']), matching_assets))
+        lookup_key = (client_sid, value)
+        matching_assets = self.asset_lookup.get(lookup_key, [])
 
         # return asset
         new_sid = uuid4()
@@ -1123,7 +1438,7 @@ class CSVParser():
         asset['finding_sid'] = finding_sid
         asset['dup_num'] = len(matching_assets) + 1
         if len(matching_assets) > 0:
-            asset['original_asset_sid'] = matching_assets[0]['sid']
+            asset['original_asset_sid'] = matching_assets[0]
 
         self.add_data_to_object(asset, "ASSET", row)
 
@@ -1134,11 +1449,14 @@ class CSVParser():
         self.assets[new_sid] = asset
         self.clients[client_sid]['assets'].append(new_sid)
         self.findings[finding_sid]['assets'].append(new_sid)
+        if lookup_key not in self.asset_lookup:
+            self.asset_lookup[lookup_key] = []
+        self.asset_lookup[lookup_key].append(new_sid)
 
         return new_sid, asset['asset']
 
     
-    def handle_affected_asset(self, row, finding_sid):
+    def handle_affected_asset(self, row, finding_sid, asset_sid=None):
         """
         Handles affected asset data that relates to an asset that should be added on a finding
 
@@ -1148,6 +1466,12 @@ class CSVParser():
         affected_asset = deepcopy(self.affected_asset_fields)
 
         self.add_data_to_object(affected_asset, "AFFECTED_ASSET", row)
+
+        for evidence in affected_asset['evidence']:
+            if asset_sid is not None:
+                evidence['assets'] = [asset_sid]
+            self.evidence[evidence['id']] = evidence
+            self.evidence_lookup[(finding_sid, asset_sid, evidence['caption'])] = evidence['id']
 
         # adds affected port data to affected asset
         affected_asset_ports = affected_asset['ports']
@@ -1424,6 +1748,17 @@ class CSVParser():
                 'version': data[3].strip()
             }
             obj['ports'][data[0]] = port
+
+    # evidence
+    def add_evidence(self, header, obj, mapping, value):
+        evidence = {
+            'id': uuid4(),
+            'caption': header.strip(),
+            'code': value,
+            'type': 'CodeSample',
+            'assets': [],
+        }
+        self.set_value(obj, mapping['path'], evidence)
     #----------end functions----------
 
 
@@ -1480,6 +1815,8 @@ class CSVParser():
                     self.add_list(header, obj, data_mapping, value)
                 elif data_type == "PORTS":
                     self.add_port(header, obj, data_mapping, value)
+                elif data_type == "EVIDENCE":
+                    self.add_evidence(header, obj, data_mapping, value)
 
 
     def parser_row(self, row):
@@ -1519,7 +1856,7 @@ class CSVParser():
 
         # if there was a header mapped to a single asset, handle the potential affected asset data for the single asset
         if finding_sid != None and asset_sid != None:
-            self.handle_affected_asset(row, finding_sid)
+            self.handle_affected_asset(row, finding_sid, asset_sid)
 
 
     def parse_data(self) -> bool:
@@ -1694,7 +2031,7 @@ class CSVParser():
                             continue
                         log.success(f'Successfully added asset(s) info to finding!')
 
-    def save_data_as_ptrac(self, folder_path:str="exported_ptracs", file_name:str|None=None) -> None:
+    def save_data_as_ptrac(self, folder_path:str="exported_ptracs", user_file_name:str|None=None, return_ptrac_jsons: bool = False) -> list:
         """
         Creates and adds all relevant data to generate a ptrac file for each report found while parsing
 
@@ -1703,6 +2040,7 @@ class CSVParser():
         :param file_name: file name without extension, defaults to None
         :type file_name: str | None, optional - if not set, a file name will be generated based on the parsed client and report names
         """        
+        ptracs = []
         ptrac_template = {
             "report_info": {
                 "doc_type": "report"
@@ -1775,7 +2113,8 @@ class CSVParser():
                             finding_info['closedAt'] = self.parser_time_milliseconds
                     else:
                         finding_info['closedAt'] = None
-                    finding_info['last_update'] = self.parser_time_milliseconds
+                    if finding_info.get("last_update") == None:
+                        finding_info['last_update'] = self.parser_time_milliseconds
                     # sev
                     finding_info['sev'] = self.severities.index(finding_info['severity'])
                     # assignedTo
@@ -1888,20 +2227,25 @@ class CSVParser():
 
                 ptrac['summary']['ReportAssets'] = report_assets
 
-                
-                # save report as ptrac
-                try:
-                    os.mkdir(folder_path)
-                except FileExistsError as e:
-                    log.debug(f'Could not create directory {folder_path}, already exists')
+                if return_ptrac_jsons:
+                    ptracs.append(ptrac)
+                else:
+                    try:
+                        os.mkdir(folder_path)
+                    except FileExistsError as e:
+                        log.debug(f'Could not create directory {folder_path}, already exists')
 
-                if file_name == None:
-                    file_name = f'{utils.sanitize_file_name(client["name"])}_{utils.sanitize_file_name(report["name"])}_{self.parser_time}'
+                    if user_file_name == None:
+                        file_name = f'{utils.sanitize_file_name(client["name"])}_{utils.sanitize_file_name(report["name"])}_{self.parser_time}'
+                    else:
+                        file_name = user_file_name
 
-                existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
-                export_file_name = utils.increment_file_name(file_name, existing_files)
-                
-                file_path = f'{folder_path}/{export_file_name}.ptrac'
-                with open(f'{file_path}', 'w') as file:
-                    json.dump(ptrac, file)
-                    log.success(f'Saved new PTRAC \'{export_file_name}.ptrac\'')
+                    existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
+                    export_file_name = utils.increment_file_name(file_name, existing_files)
+                    
+                    file_path = f'{folder_path}/{export_file_name}.ptrac'
+                    with open(f'{file_path}', 'w') as file:
+                        json.dump(ptrac, file)
+                        log.success(f'Saved new PTRAC \'{export_file_name}.ptrac\'')
+
+        return ptracs

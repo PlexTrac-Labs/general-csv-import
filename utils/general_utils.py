@@ -1,5 +1,6 @@
 import re
 import time
+import json
 from hashlib import sha256
 from typing import List
 from copy import copy, deepcopy
@@ -194,6 +195,53 @@ def is_valid_cvss3_1_vector(cvss_vector: str) -> bool:
     return pattern.match(cvss_vector) is not None
 
 
+def calculate_cvss3_base_score(vector: str) -> float:
+    """
+    Compute CVSS v3.0/v3.1 base score from a vector string.
+    """
+    v = re.sub(r'^CVSS:3\.[01]/', '', vector.strip())
+    metrics = dict(part.split(":", 1) for part in v.split("/"))
+
+    weights = {
+        "AV": {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2},
+        "AC": {"L": 0.77, "H": 0.44},
+        "PR_U": {"N": 0.85, "L": 0.62, "H": 0.27},
+        "PR_C": {"N": 0.85, "L": 0.68, "H": 0.5},
+        "UI": {"N": 0.85, "R": 0.62},
+        "S": {"U": "U", "C": "C"},
+        "CIA": {"H": 0.56, "L": 0.22, "N": 0.0},
+    }
+
+    scope = metrics["S"]
+    impact_sub_score = 1 - (
+        (1 - weights["CIA"][metrics["C"]])
+        * (1 - weights["CIA"][metrics["I"]])
+        * (1 - weights["CIA"][metrics["A"]])
+    )
+    if scope == "U":
+        impact = 6.42 * impact_sub_score
+    else:
+        impact = 7.52 * (impact_sub_score - 0.029) - 3.25 * ((impact_sub_score - 0.02) ** 15)
+
+    pr_key = "PR_U" if scope == "U" else "PR_C"
+    exploitability = (
+        8.22
+        * weights["AV"][metrics["AV"]]
+        * weights["AC"][metrics["AC"]]
+        * weights[pr_key][metrics["PR"]]
+        * weights["UI"][metrics["UI"]]
+    )
+
+    if impact <= 0:
+        return 0.0
+    if scope == "U":
+        score = min(impact + exploitability, 10)
+    else:
+        score = min(1.08 * (impact + exploitability), 10)
+
+    return int(score * 10 + 0.999999) / 10
+
+
 def sanitize_file_name(name:str, allow_spaces: bool = False) -> str:
     """
     Windows OS has certain character that are not allowed in folder or file names. If a folder or file name is being
@@ -243,3 +291,26 @@ def increment_file_name(file_name, existing_files):
             count += 1
         return f"{base_name} ({count})"
     return base_name
+
+
+def save_json_as_ptrac_file(ptrac_data: dict, file_name: str = "", folder_path: str = "exported_ptracs") -> None:
+    """
+    Save a PTRAC JSON dictionary to a .ptrac file.
+    """
+    report_name = ptrac_data.get("report_info", {}).get("name", "")
+    if file_name:
+        report_name = file_name
+    report_name = sanitize_file_name(report_name)
+
+    try:
+        os.mkdir(folder_path)
+    except FileExistsError:
+        pass
+
+    existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
+    export_file_name = increment_file_name(report_name, existing_files)
+
+    file_path = f'{folder_path}/{export_file_name}.ptrac'
+    with open(f'{file_path}', 'w') as file:
+        json.dump(ptrac_data, file)
+        log.info(f'Saved new PTRAC \'{export_file_name}.ptrac\'')

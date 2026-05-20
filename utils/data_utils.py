@@ -25,7 +25,13 @@ def get_page_of_clients(page: int = 0, clients: list = [], total_clients: int = 
         "pagination": {
             "offset": page*100,
             "limit": 100
-        }
+        },
+        "sort": [
+            {
+                "by": "name",
+                "order": "ASC"
+            }
+        ]
     }
     # region - full structure of client data response
 
@@ -100,7 +106,7 @@ def get_page_of_clients(page: int = 0, clients: list = [], total_clients: int = 
     
     return True
 
-def get_page_of_reports(page: int, reports: list = [], total_reports: int = -1, auth:Auth=None) -> None:
+def get_page_of_reports(page: int = 0, reports: list = [], total_reports: int = -1, auth:Auth=None) -> None:
     """
     Handles traversing pagination results to create a list of all items.
 
@@ -119,7 +125,13 @@ def get_page_of_reports(page: int, reports: list = [], total_reports: int = -1, 
         "pagination": {
             "offset": page*1000,
             "limit": 1000
-        }
+        },
+        "sort": [
+            {
+                "by": "name",
+                "order": "ASC"
+            }
+        ]
     }
     # region - full structure of report data response
     
