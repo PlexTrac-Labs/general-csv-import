@@ -1,78 +1,77 @@
-# Requirements
-- [Python 3+](https://www.python.org/downloads/)
-- [pip](https://pip.pypa.io/en/stable/installation/)
-- [pipenv](https://pipenv.pypa.io/en/latest/)
+# General CSV Import Template
 
-# Installing
-After installing Python, pip, and pipenv, run the following commands to setup the Python virtual environment.
+Template project for building customer-specific import scripts that transform source data into PlexTrac PTRAC files.
+
+## Requirements
+- Python 3
+- pip
+- pipenv
+
+## Install
 ```bash
-git clone this_repo
-cd path/to/cloned/repo
 pipenv install
 ```
 
-# Setup
-After setting up the Python environment, you will need to setup a few things before you can run the script.
-
-## CSV with Data to Import
-In the `config.yaml` file you should add the file path to the CSV with data you're trying to import.
-
-## Header Mapping CSV
-To import a CSV with data, you must create a mapping to tell the script where the data for each column should go in Plextrac.
-1. Make a copy of the csv file with the data you want to import.
-2. Rename the copy to `header_mapping.csv`. If you choose a different file name you will need to update the `csv_headers_file_path` value in the `config.yaml` file.
-3. Open the `header_mapping.csv` and delete all rows except the header row.
-4. In the second row, for each column you want to import, add a location key. 
-
-See [Location Key List.ods](https://github.com/pgreen-ptrac/general-csv-import/files/10413417/Location.Key.List.ods) for list of available keys and descriptions.
-
-5. Move this file to the main directory where you cloned this repo. If you place it in a different directory you will need to update the `csv_headers_file_path` value in the `config.yaml` file.
-
-## Credentials
-In the `config.yaml` file you should add the full URL to your instance of Plextrac.
-
-The config also can store your username and password. Plextrac authentication lasts for 15 mins before requiring you to re-authenticate. The script is set up to do this automatically. If these 3 values are set in the config, and MFA is not enable for the user, the script will take those values and authenticate automatically, both initially and every 15 mins. If any value is not saved in the config, you will be prompted when the script is run and during re-authentication.
-
-## Report Template & Findings Layout
-In the `config.yaml` file you can add the name of an existing Report Template and Findings Layout. If these values are present, it will verify the template exists and link it to all reports created. Upon navigating to the Report Details tab of a report, you will see the respective dropdown pre-populated.
-
-In the platform there can be duplicate names for report templates and findings layouts. For this script to know which template you want to add, there can only be a single template with the same name you added to the config file.
-
-## API Version
-The Api Version of the Plextrac instance you plan to import .ptrac files to is required for successful .ptrac generation. The API Version can be found at the bottom right of the Account Admin page in Plextrac. This value can be entered in the `config.yaml` file.
-
-# Usage
-After setting everything up you can run the script with the following command. You should be in the folder where you cloned the repo when running the following.
+## Usage
+Generate PTRAC files from an example CSV:
 ```bash
-pipenv run python main.py
+pipenv run python main.py --type example_csv --input testing_files/csv_data.csv --api-version 2.19.0
 ```
-You can also add values to the `config.yaml` file to simplify providing the script with the data needed to run. Values not in the config will be prompted for when the script is run.
 
-## Required Information
-The following values can either be added to the `config.yaml` file or entered when prompted for when the script is run.
-- PlexTrac Top Level Domain e.g. https://yourapp.plextrac.com
-- Username
-- Password
-- MFA Token (if enabled)
-- File path to CSV containing data to import
-- File path to CSV containing header mappings to Plextrac location keys
-- API version
+Generate PTRAC files from an example JSON file:
+```bash
+pipenv run python main.py --type example_json --input testing_files/test_data.json --api-version 2.19.0
+```
 
-## Script Execution Flow
-When the script starts it will load in config values and try to:
-- Authenticates user
-- Read and verify CSV data
-- Create a log file
+Optionally import generated PTRACs into PlexTrac:
+```bash
+pipenv run python main.py --type example_csv --input input.csv --api-version 2.19.0 --import-to-plextrac --instance-url https://example.plextrac.com --username user@example.com --password password
+```
 
-Once this setup is complete it will start looping through each row in CSV and try to:
-- Determine which client the row belongs to based on the client_name location key mapping
-- Add all client information if creating a new client
-- Determine which report the row belongs to based on the report_name location key mapping.
-- Add all report information if creating a new report
-- Create a new finding and add all finding information
-- If any asset location keys were mapped, create a new asset and add all asset information
+Direct single-object API creation is no longer the preferred template flow. Generate PTRACs first, then optionally upload those PTRACs.
 
-After parsing the CSV, the user can choose to import client, report, finding, and asset data directly into Plextrac via the API AND/OR save .ptrac files for each report that was parsed from the CSV. Importing data via the API allows you to create new clients and add any parsed client information, however, this requires multiple API calls per object and may take some time depending on CSV size. Generated .ptrac files can be imported into a client in Plextrac to create a new report that includes all report information that was parsed from the CSV. You can also import a .ptrac into an existing report in Plextrac to import the findings it contains.
+## Parser Layout
+- `main.py`: command-line orchestration only.
+- `mappings.py`: parser type definitions, mapping dictionaries, data loaders, data validation, and temp-CSV builders.
+- `csv_parser.py`: generic parser and PTRAC builder.
+- `utils/`: authentication, input, API request, data lookup, validation, and file helpers.
 
-## Logging
-The script is run in INFO mode so you can see progress on the command line. A log file will be created when the script is run and saved to the root directory where the script is. You can search this file for "WARNING" or "ERROR" to see if something did not get parsed or imported correctly. Any critical level issue will stop the script immediately.
+## Adding A Parser Type
+1. Add a mapping dictionary in `mappings.py`.
+2. Add a load function for the source file type.
+3. Add a verify function for required source data.
+4. Add a temp-CSV builder that outputs headers from `parser.get_csv_headers()` and one row per finding.
+5. Add a `MapType` value.
+6. Add a `_MapSpec` entry.
+7. Update `resolve()` to return the new spec.
+
+## Important Flags
+- `--type`: parser mapping type from `mappings.MapType`.
+- `--input`: source data file path.
+- `--api-version`: PlexTrac API version used in generated PTRAC metadata.
+- `--finding-merge-strategy`: `none`, `title`, `user_defined_fields`, or `all_fields`.
+- `--output-dir`: generated PTRAC output directory.
+- `--import-to-plextrac`: upload generated PTRACs to PlexTrac.
+- `--instance-url`, `--username`, `--password`: required for `--import-to-plextrac`.
+
+## Merge Strategies
+- `none`: keep every parsed finding row as its own finding.
+- `title`: merge findings with the same title in the same report.
+- `user_defined_fields`: merge findings with the same title and matching scalar fields; concatenate differing rich text fields and dedupe list fields.
+- `all_fields`: merge only when scalar and rich text fields match exactly; list fields are still deduped.
+
+Asset merging follows the selected finding merge strategy. Duplicate assets in a report are collapsed to a single ReportAsset, while affected asset fields are merged as safely as possible.
+
+## Evidence Mapping
+Use `affected_asset_evidence` to map a source column into affected-asset evidence. The column header becomes the evidence caption and the cell value becomes the code sample.
+
+## Location Keys
+See `Location Key List.md` for available mapping keys, including finding merge metadata and affected-asset evidence.
+
+## Naming Notes
+- `object`: parser-internal object stored on `self.clients`, `self.reports`, `self.findings`, or `self.assets`.
+- `object_info`: PTRAC-ready copy of an object after parser-only fields are removed.
+- `original_asset`: first asset seen with a given client/name pair.
+- `current_asset`: duplicate-aware asset currently being rendered into PTRAC structures.
+- `affected_fields`: fields tied to a finding/asset pair.
+- `affected_asset_info`: affected asset object stored under a PTRAC finding.
