@@ -6,6 +6,8 @@ Findings will only be imported to new clients and reports. The names of these cl
 
 Keys can only be used for a single header unless otherwise noted below. If a key, that is not noted to be able to use multiple times, is added to multiple headers it will override data.
 
+Finding mappings include merge metadata used by parser merge strategies. `SCALAR` fields must match for `user_defined_fields` merges, `RICH_TEXT` fields can be concatenated when matched findings differ, and `LIST` fields are combined and deduplicated.
+
 ---
 
 ## Available locations to map data to in Plextrac
@@ -47,6 +49,7 @@ Keys can only be used for a single header unless otherwise noted below. If a key
 | finding_assigned_to | Finding assigned to field. This should be a user email. If there is a Plextrac user with the same email, the finding will be assigned to them and show up on their dashboard. |
 | finding_created_at | Date the finding was created or first observed on |
 | finding_closed_at | Date the finding was closed on. If this value is added to a finding, the finding status will automatically be marked as Closed. |
+| finding_last_updated_at | Date the finding was last updated. If omitted, PTRAC generation uses the parser run timestamp. |
 | finding_description | Finding description field |
 | finding_recommendations | Finding recommendations field |
 | finding_references | Finding references field. You can use this key for multiple headers. Each value will be appended after a newline. |

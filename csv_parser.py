@@ -181,6 +181,14 @@ class CSVParser():
             'input_blanks': False,
             'path': ['closedAt'] # validate
         },
+        'finding_last_updated_at': {
+            'id': 'finding_last_updated_at',
+            'object_type': 'FINDING',
+            'data_type' : 'DETAIL',
+            'validation_type': "DATE_EPOCH",
+            'input_blanks': False,
+            'path': ['last_update'] # validate
+        },
         'finding_description': {
             'id': 'finding_description',
             'object_type': 'FINDING',
@@ -764,6 +772,8 @@ class CSVParser():
         """
         
         """
+        self.data_mapping = deepcopy(self.data_mapping)
+        self._add_finding_merge_metadata()
         self.csv_headers_mapping: dict = deepcopy(header_mapping) if header_mapping is not None else deepcopy(self.csv_headers_mapping_template)
         self.csv_data: list = None
         self.parser_progress: int = None
@@ -790,6 +800,32 @@ class CSVParser():
 
         self.client_template['name'] = f'client_name_{self.parser_date}'
         self.report_template['name'] = f'report_name_{self.parser_date}'
+
+
+    def _add_finding_merge_metadata(self) -> None:
+        rich_text_fields = {
+            "finding_description",
+            "finding_recommendations",
+            "finding_references",
+            "finding_custom_field",
+        }
+        list_fields = {
+            "finding_tag",
+            "finding_multi_tag",
+            "finding_cve",
+            "finding_cwe",
+        }
+
+        for key, mapping in self.data_mapping.items():
+            if mapping["object_type"] != "FINDING":
+                continue
+            if key in rich_text_fields:
+                mapping.setdefault("merge_type", "RICH_TEXT")
+            elif key in list_fields:
+                mapping.setdefault("merge_type", "LIST")
+            else:
+                mapping.setdefault("merge_type", "SCALAR")
+            mapping.setdefault("merge_override", None)
 
 
     #----------getters and setter----------
