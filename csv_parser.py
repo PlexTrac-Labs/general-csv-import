@@ -611,6 +611,14 @@ class CSVParser():
             'input_blanks': False,
             'path': ['locationUrl']
         },
+        'affected_asset_evidence': {
+            'id': 'affected_asset_evidence',
+            'object_type': 'AFFECTED_ASSET',
+            'data_type' : 'EVIDENCE',
+            'validation_type': None,
+            'input_blanks': False,
+            'path': ['evidence', 'INDEX']
+        },
         # AFFECTED ASSET PORT DATA
         'affected_asset_port_number': {
             'id': 'affected_asset_port_number',
@@ -801,6 +809,8 @@ class CSVParser():
         self.findings = {}
         self.assets = {}
         self.affected_assets = {}
+        self.evidence = {}
+        self.evidence_lookup = {}
 
         self.client_template['name'] = f'client_name_{self.parser_date}'
         self.report_template['name'] = f'report_name_{self.parser_date}'
@@ -1433,7 +1443,7 @@ class CSVParser():
         return new_sid, asset['asset']
 
     
-    def handle_affected_asset(self, row, finding_sid):
+    def handle_affected_asset(self, row, finding_sid, asset_sid=None):
         """
         Handles affected asset data that relates to an asset that should be added on a finding
 
@@ -1443,6 +1453,12 @@ class CSVParser():
         affected_asset = deepcopy(self.affected_asset_fields)
 
         self.add_data_to_object(affected_asset, "AFFECTED_ASSET", row)
+
+        for evidence in affected_asset['evidence']:
+            if asset_sid is not None:
+                evidence['assets'] = [asset_sid]
+            self.evidence[evidence['id']] = evidence
+            self.evidence_lookup[(finding_sid, asset_sid, evidence['caption'])] = evidence['id']
 
         # adds affected port data to affected asset
         affected_asset_ports = affected_asset['ports']
@@ -1719,6 +1735,17 @@ class CSVParser():
                 'version': data[3].strip()
             }
             obj['ports'][data[0]] = port
+
+    # evidence
+    def add_evidence(self, header, obj, mapping, value):
+        evidence = {
+            'id': uuid4(),
+            'caption': header.strip(),
+            'code': value,
+            'type': 'CodeSample',
+            'assets': [],
+        }
+        self.set_value(obj, mapping['path'], evidence)
     #----------end functions----------
 
 
@@ -1775,6 +1802,8 @@ class CSVParser():
                     self.add_list(header, obj, data_mapping, value)
                 elif data_type == "PORTS":
                     self.add_port(header, obj, data_mapping, value)
+                elif data_type == "EVIDENCE":
+                    self.add_evidence(header, obj, data_mapping, value)
 
 
     def parser_row(self, row):
@@ -1814,7 +1843,7 @@ class CSVParser():
 
         # if there was a header mapped to a single asset, handle the potential affected asset data for the single asset
         if finding_sid != None and asset_sid != None:
-            self.handle_affected_asset(row, finding_sid)
+            self.handle_affected_asset(row, finding_sid, asset_sid)
 
 
     def parse_data(self) -> bool:

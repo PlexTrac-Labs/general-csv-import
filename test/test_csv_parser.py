@@ -206,3 +206,24 @@ def test_add_asset_to_finding_merges_existing_affected_asset_fields():
     assert affected_asset["ports"] == {80: {"number": "80"}, 443: {"number": "443"}}
     assert sorted(affected_asset["vulnerableParameters"]) == ["param1", "param2"]
     assert affected_asset["notes"] == "first note\nsecond note"
+
+
+def test_affected_asset_evidence_mapping_adds_evidence_object():
+    parser = CSVParser(
+        header_mapping={
+            "Evidence Column": {
+                "header": "Evidence Column",
+                "mapping_key": "affected_asset_evidence",
+                "col_index": 0,
+            }
+        }
+    )
+    affected_asset = {"evidence": []}
+
+    parser.add_data_to_object(affected_asset, "AFFECTED_ASSET", ["proof text"])
+
+    evidence = affected_asset["evidence"][0]
+    assert evidence["caption"] == "Evidence Column"
+    assert evidence["code"] == "proof text"
+    assert evidence["type"] == "CodeSample"
+    assert evidence["assets"] == []

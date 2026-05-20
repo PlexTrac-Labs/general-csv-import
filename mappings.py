@@ -57,6 +57,11 @@ example_csv_template_mapping = {
         "mapping_key": "asset_name",
         "col_index": None
     },
+    "evidence": {
+        "header": "evidence",
+        "mapping_key": "affected_asset_evidence",
+        "col_index": None
+    },
     "tags": {
         "header": "tags",
         "mapping_key": "finding_multi_tag",
@@ -360,6 +365,7 @@ def create_temp_data_csv_example_csv(loaded_file_data: LoadedCSVData, parser: CS
         set_field(temp_csv_headers, new_row, "recommendations", get_value(loaded_headers, loaded_row, "recommendations"))
         set_field(temp_csv_headers, new_row, "references", get_value(loaded_headers, loaded_row, "references"))
         set_field(temp_csv_headers, new_row, "asset_name", get_value(loaded_headers, loaded_row, "asset_name"))
+        set_field(temp_csv_headers, new_row, "evidence", get_value(loaded_headers, loaded_row, "evidence"))
         set_field(temp_csv_headers, new_row, "tags", handle_tags(get_value(loaded_headers, loaded_row, "tags")))
         set_field(temp_csv_headers, new_row, "report_name", report_name)
         set_field(temp_csv_headers, new_row, "client_name", client_name)
