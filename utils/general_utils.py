@@ -1,5 +1,6 @@
 import re
 import time
+import json
 from hashlib import sha256
 from typing import List
 from copy import copy, deepcopy
@@ -243,3 +244,26 @@ def increment_file_name(file_name, existing_files):
             count += 1
         return f"{base_name} ({count})"
     return base_name
+
+
+def save_json_as_ptrac_file(ptrac_data: dict, file_name: str = "", folder_path: str = "exported_ptracs") -> None:
+    """
+    Save a PTRAC JSON dictionary to a .ptrac file.
+    """
+    report_name = ptrac_data.get("report_info", {}).get("name", "")
+    if file_name:
+        report_name = file_name
+    report_name = sanitize_file_name(report_name)
+
+    try:
+        os.mkdir(folder_path)
+    except FileExistsError:
+        pass
+
+    existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
+    export_file_name = increment_file_name(report_name, existing_files)
+
+    file_path = f'{folder_path}/{export_file_name}.ptrac'
+    with open(f'{file_path}', 'w') as file:
+        json.dump(ptrac_data, file)
+        log.info(f'Saved new PTRAC \'{export_file_name}.ptrac\'')

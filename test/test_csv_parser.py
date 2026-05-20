@@ -227,3 +227,64 @@ def test_affected_asset_evidence_mapping_adds_evidence_object():
     assert evidence["code"] == "proof text"
     assert evidence["type"] == "CodeSample"
     assert evidence["assets"] == []
+
+
+def test_save_data_as_ptrac_can_return_ptrac_jsons_without_writing_files():
+    parser = CSVParser()
+    client_sid = "client-1"
+    report_sid = "report-1"
+    finding_sid = "finding-1"
+    parser.doc_version = "2.0.0"
+    parser.clients = {
+        client_sid: {
+            "sid": client_sid,
+            "name": "Client",
+            "tags": [],
+            "custom_field": [],
+            "description": "",
+            "assets": [],
+            "reports": [report_sid],
+        }
+    }
+    parser.reports = {
+        report_sid: {
+            "sid": report_sid,
+            "client_sid": client_sid,
+            "name": "Report",
+            "status": "Published",
+            "tags": [],
+            "custom_field": [],
+            "start_date": None,
+            "end_date": None,
+            "exec_summary": {"custom_fields": []},
+            "findings": [finding_sid],
+        }
+    }
+    parser.findings = {
+        finding_sid: {
+            "sid": finding_sid,
+            "client_sid": client_sid,
+            "report_sid": report_sid,
+            "affected_asset_sid": None,
+            "title": "Finding",
+            "severity": "High",
+            "status": "Open",
+            "description": "Description",
+            "recommendations": "Fix",
+            "references": "",
+            "fields": {},
+            "risk_score": {"CVSS3_1": {"overall": 0, "vector": ""}},
+            "common_identifiers": {"CVE": [], "CWE": []},
+            "tags": [],
+            "affected_assets": {},
+            "assets": [],
+        }
+    }
+
+    ptracs = parser.save_data_as_ptrac(return_ptrac_jsons=True)
+
+    assert len(ptracs) == 1
+    assert ptracs[0]["client_info"]["name"] == "Client"
+    assert ptracs[0]["report_info"]["name"] == "Report"
+    assert ptracs[0]["flaws_array"][0]["title"] == "Finding"
+    assert ptracs[0]["flaws_array"][0]["last_update"] == parser.parser_time_milliseconds

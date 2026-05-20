@@ -2018,7 +2018,7 @@ class CSVParser():
                             continue
                         log.success(f'Successfully added asset(s) info to finding!')
 
-    def save_data_as_ptrac(self, folder_path:str="exported_ptracs", file_name:str|None=None) -> None:
+    def save_data_as_ptrac(self, folder_path:str="exported_ptracs", user_file_name:str|None=None, return_ptrac_jsons: bool = False) -> list:
         """
         Creates and adds all relevant data to generate a ptrac file for each report found while parsing
 
@@ -2027,6 +2027,7 @@ class CSVParser():
         :param file_name: file name without extension, defaults to None
         :type file_name: str | None, optional - if not set, a file name will be generated based on the parsed client and report names
         """        
+        ptracs = []
         ptrac_template = {
             "report_info": {
                 "doc_type": "report"
@@ -2099,7 +2100,8 @@ class CSVParser():
                             finding_info['closedAt'] = self.parser_time_milliseconds
                     else:
                         finding_info['closedAt'] = None
-                    finding_info['last_update'] = self.parser_time_milliseconds
+                    if finding_info.get("last_update") == None:
+                        finding_info['last_update'] = self.parser_time_milliseconds
                     # sev
                     finding_info['sev'] = self.severities.index(finding_info['severity'])
                     # assignedTo
@@ -2212,20 +2214,25 @@ class CSVParser():
 
                 ptrac['summary']['ReportAssets'] = report_assets
 
-                
-                # save report as ptrac
-                try:
-                    os.mkdir(folder_path)
-                except FileExistsError as e:
-                    log.debug(f'Could not create directory {folder_path}, already exists')
+                if return_ptrac_jsons:
+                    ptracs.append(ptrac)
+                else:
+                    try:
+                        os.mkdir(folder_path)
+                    except FileExistsError as e:
+                        log.debug(f'Could not create directory {folder_path}, already exists')
 
-                if file_name == None:
-                    file_name = f'{utils.sanitize_file_name(client["name"])}_{utils.sanitize_file_name(report["name"])}_{self.parser_time}'
+                    if user_file_name == None:
+                        file_name = f'{utils.sanitize_file_name(client["name"])}_{utils.sanitize_file_name(report["name"])}_{self.parser_time}'
+                    else:
+                        file_name = user_file_name
 
-                existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
-                export_file_name = utils.increment_file_name(file_name, existing_files)
-                
-                file_path = f'{folder_path}/{export_file_name}.ptrac'
-                with open(f'{file_path}', 'w') as file:
-                    json.dump(ptrac, file)
-                    log.success(f'Saved new PTRAC \'{export_file_name}.ptrac\'')
+                    existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
+                    export_file_name = utils.increment_file_name(file_name, existing_files)
+                    
+                    file_path = f'{folder_path}/{export_file_name}.ptrac'
+                    with open(f'{file_path}', 'w') as file:
+                        json.dump(ptrac, file)
+                        log.success(f'Saved new PTRAC \'{export_file_name}.ptrac\'')
+
+        return ptracs
