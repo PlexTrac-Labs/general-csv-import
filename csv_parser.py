@@ -787,6 +787,10 @@ class CSVParser():
 
         self.doc_version = None
 
+        self.finding_merge_strategy = None
+        self.finding_merge_sid_map = {}
+        self.asset_merge_strategy = None
+
         self.client_template = deepcopy(self.client_template_mock)
         self.report_template = deepcopy(self.report_template_mock)
         self.finding_template = deepcopy(self.finding_template_mock)
@@ -856,6 +860,13 @@ class CSVParser():
             if mapping_key == value['mapping_key']:
                 return value['header']
         return None
+
+    def set_finding_merge_strategy(self, strategy: str):
+        if strategy not in ["title", "user_defined_fields", "all_fields"]:
+            log.warning(f"Incorrect key value '{strategy}': Unknown findings merge strategy, accepted values [\"title\", \"user_defined_fields\", \"all_fields\"]\nWill not merge findings...")
+            return
+        self.finding_merge_strategy = strategy
+        self.asset_merge_strategy = strategy
     #----------End getters and setter----------
 
 
@@ -893,10 +904,236 @@ class CSVParser():
         Runs through all findings and updates the titles for any duplicates.
         Cannot be done during parsing since we still have to look for duplicates there
         """
+        if self.finding_merge_strategy:
+            merged_findings = {}
+
+            findings_by_report = {}
+            for finding_sid, finding in self.findings.items():
+                report_sid = finding['report_sid']
+                if report_sid not in findings_by_report:
+                    findings_by_report[report_sid] = {}
+                findings_by_report[report_sid][finding_sid] = finding
+
+            for report in self.reports.values():
+                report_sid = report['sid']
+                if report_sid in findings_by_report:
+                    merged_findings.update(self.combine_findings(findings_by_report[report_sid], self.finding_merge_strategy))
+
+            self.findings = merged_findings
+
+            for report in self.reports.values():
+                new_finding_sids = []
+                seen_sids = set()
+                for finding_sid in report['findings']:
+                    mapped_sid = self.finding_merge_sid_map.get(finding_sid, finding_sid)
+                    if mapped_sid not in seen_sids:
+                        new_finding_sids.append(mapped_sid)
+                        seen_sids.add(mapped_sid)
+                self.reports[report['sid']]['findings'] = new_finding_sids
+
+            for asset in self.assets.values():
+                if asset['finding_sid'] in self.finding_merge_sid_map:
+                    self.assets[asset['sid']]['finding_sid'] = self.finding_merge_sid_map[asset['finding_sid']]
+
+            title_groups = {}
+            for finding in self.findings.values():
+                title = finding['title']
+                if title not in title_groups:
+                    title_groups[title] = []
+                title_groups[title].append(finding)
+
+            for findings in title_groups.values():
+                if len(findings) > 1:
+                    findings.sort(key=lambda x: x['dup_num'])
+                    for i, finding in enumerate(findings, 1):
+                        finding['dup_num'] = i
+
         for f in self.findings.values():
             if f['dup_num'] > 1:
                 f['title'] = f'{f["title"]} ({f["dup_num"]})'
             f.pop("dup_num")
+
+
+    def combine_findings(self, finding_list_to_merge, merge_strategy: str):
+        current_mapping_keys = [x['mapping_key'] for x in self.csv_headers_mapping.values()]
+        filtered_data_mappings = {k: v for k, v in self.data_mapping.items() if k in current_mapping_keys}
+        if not filtered_data_mappings:
+            filtered_data_mappings = {k: v for k, v in self.data_mapping.items() if v['object_type'] == "FINDING"}
+
+        scalar_paths = [v['path'] for v in filtered_data_mappings.values() if v['object_type'] == "FINDING" and v['merge_type'] == "SCALAR"]
+        rich_text_paths = [v['path'] for v in filtered_data_mappings.values() if v['object_type'] == "FINDING" and v['merge_type'] == "RICH_TEXT"]
+        list_paths = [v['path'] for v in filtered_data_mappings.values() if v['object_type'] == "FINDING" and v['merge_type'] == "LIST"]
+        rich_text_exclusions = [['fields']]
+
+        def _get_path(obj, path):
+            cur = obj
+            for k in path:
+                if k == "INDEX":
+                    return cur
+                if isinstance(cur, dict) and k in cur:
+                    cur = cur[k]
+                else:
+                    return None
+            return cur
+
+        def _set_path(obj, path, value):
+            if len(path) == 1:
+                if path[0] != "INDEX":
+                    obj[path[0]] = value
+                return
+            if path[0] == "INDEX":
+                log.warning("Reached unexpected conditional code path, check fundamental script logic")
+                return
+            if path[0] not in obj:
+                obj[path[0]] = {}
+            _set_path(obj[path[0]], path[1:], value)
+
+        def _has_value(x):
+            if x is None:
+                return False
+            if isinstance(x, str):
+                return len(x) > 0
+            if isinstance(x, (list, tuple, set, dict)):
+                return len(x) > 0
+            return True
+
+        def _normalized_text(text):
+            if not isinstance(text, str):
+                return str(text)
+            text = re.sub(r'<[^>]+>', '', text)
+            text = re.sub(r'\s+', ' ', text)
+            return text.strip()
+
+        def _is_value_contained_in_base(base_value, inc_value):
+            if not base_value or not inc_value:
+                return False
+            return _normalized_text(inc_value) in _normalized_text(base_value)
+
+        def _merge_lists(a, b):
+            a = a or []
+            b = b or []
+            seen = set()
+            out = []
+
+            def _key(item):
+                try:
+                    hash(item)
+                    return ("H", item)
+                except TypeError:
+                    return ("U", json.dumps(item, sort_keys=True, default=str))
+
+            for item in a + b:
+                key = _key(item)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(item)
+            return out
+
+        def _are_matching(f1, f2) -> bool:
+            if merge_strategy == "title":
+                return True
+            if merge_strategy == "user_defined_fields":
+                return all(_get_path(f1, path) == _get_path(f2, path) for path in scalar_paths)
+            if merge_strategy == "all_fields":
+                return (
+                    all(_get_path(f1, path) == _get_path(f2, path) for path in scalar_paths)
+                    and all(_get_path(f1, path) == _get_path(f2, path) for path in rich_text_paths)
+                )
+            log.critical("Incorrect key value: Unknown findings merge strategy")
+            exit(1)
+
+        def _merge_findings(base: dict, incoming: dict):
+            merged = deepcopy(base)
+
+            for path in scalar_paths:
+                base_val = _get_path(merged, path)
+                inc_val = _get_path(incoming, path)
+                if not _has_value(base_val) and _has_value(inc_val):
+                    _set_path(merged, path, inc_val)
+
+            for path in rich_text_paths:
+                if path in rich_text_exclusions:
+                    continue
+                base_val = _get_path(merged, path)
+                inc_val = _get_path(incoming, path)
+                if merge_strategy == "user_defined_fields":
+                    if base_val and inc_val and base_val != inc_val:
+                        if not _is_value_contained_in_base(base_val, inc_val):
+                            _set_path(merged, path, f"{base_val}\n{inc_val}")
+                    elif not base_val and inc_val:
+                        _set_path(merged, path, inc_val)
+                elif not base_val and inc_val:
+                    _set_path(merged, path, inc_val)
+
+            base_fields = _get_path(merged, ["fields"])
+            inc_fields = _get_path(incoming, ["fields"])
+            if isinstance(base_fields, dict) and isinstance(inc_fields, dict):
+                for field_key, field_value in inc_fields.items():
+                    if field_key == "scores":
+                        continue
+                    if field_key not in base_fields:
+                        base_fields[field_key] = deepcopy(field_value)
+                        continue
+                    base_field = base_fields[field_key]
+                    if isinstance(base_field, dict) and isinstance(field_value, dict):
+                        base_value = base_field.get("value", "")
+                        inc_value = field_value.get("value", "")
+                        if base_value and inc_value and not _is_value_contained_in_base(base_value, inc_value):
+                            merged_field = deepcopy(base_field)
+                            merged_field["value"] = f"{base_value}\n{inc_value}"
+                            base_fields[field_key] = merged_field
+                        elif not base_value and inc_value:
+                            base_fields[field_key] = deepcopy(field_value)
+                    elif not _has_value(base_field):
+                        base_fields[field_key] = deepcopy(field_value)
+                _set_path(merged, ["fields"], base_fields)
+
+            for path in list_paths:
+                base_val = _get_path(merged, path)
+                inc_val = _get_path(incoming, path)
+                if isinstance(base_val, list) or isinstance(inc_val, list):
+                    _set_path(merged, path, _merge_lists(base_val, inc_val))
+
+            base_affected_asset_sid = _get_path(merged, ["affected_asset_sid"])
+            inc_affected_asset_sid = _get_path(incoming, ["affected_asset_sid"])
+            if isinstance(base_affected_asset_sid, dict) and isinstance(inc_affected_asset_sid, dict):
+                _set_path(merged, ["affected_asset_sid"], {**base_affected_asset_sid, **inc_affected_asset_sid})
+
+            base_assets = _get_path(merged, ["assets"])
+            inc_assets = _get_path(incoming, ["assets"])
+            if isinstance(base_assets, list) or isinstance(inc_assets, list):
+                _set_path(merged, ["assets"], _merge_lists(base_assets, inc_assets))
+
+            return merged
+
+        finding_groups = {}
+        for finding in finding_list_to_merge.values():
+            finding_title = finding['title']
+            if finding_title not in finding_groups:
+                finding_groups[finding_title] = {}
+            finding_groups[finding_title][finding['sid']] = finding
+
+        new_findings = {}
+        for group in finding_groups.values():
+            remaining = list(group.keys())
+            while remaining:
+                canonical_sid = remaining[0]
+                canonical = deepcopy(group[canonical_sid])
+                remaining.remove(canonical_sid)
+
+                to_absorb = []
+                for sid in remaining:
+                    if _are_matching(canonical, group[sid]):
+                        to_absorb.append(sid)
+
+                for sid in to_absorb:
+                    canonical = _merge_findings(canonical, group[sid])
+                    self.finding_merge_sid_map[sid] = canonical_sid
+                    remaining.remove(sid)
+
+                new_findings[canonical_sid] = canonical
+
+        return new_findings
 
 
     def add_asset_to_finding(self, finding, asset, finding_sid, asset_sid):

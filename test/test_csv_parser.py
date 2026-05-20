@@ -54,3 +54,107 @@ def test_finding_last_updated_mapping_is_available():
     assert mapping["validation_type"] == "DATE_EPOCH"
     assert mapping["path"] == ["last_update"]
     assert mapping["merge_type"] == "SCALAR"
+
+
+def test_user_defined_finding_merge_concatenates_rich_text_and_dedupes_lists():
+    parser = CSVParser()
+    parser.set_finding_merge_strategy("user_defined_fields")
+
+    report_sid = "report-1"
+    first_sid = "finding-1"
+    second_sid = "finding-2"
+    parser.reports = {report_sid: {"sid": report_sid, "name": "Report", "findings": [first_sid, second_sid]}}
+    parser.assets = {}
+    parser.findings = {
+        first_sid: {
+            "sid": first_sid,
+            "report_sid": report_sid,
+            "title": "Duplicate Finding",
+            "severity": "High",
+            "status": "Open",
+            "description": "First description",
+            "recommendations": "Fix it",
+            "references": "Ref A",
+            "tags": ["one"],
+            "fields": {},
+            "assets": [],
+            "affected_asset_sid": {},
+            "dup_num": 1,
+        },
+        second_sid: {
+            "sid": second_sid,
+            "report_sid": report_sid,
+            "title": "Duplicate Finding",
+            "severity": "High",
+            "status": "Open",
+            "description": "Second description",
+            "recommendations": "Fix it",
+            "references": "Ref B",
+            "tags": ["one", "two"],
+            "fields": {},
+            "assets": [],
+            "affected_asset_sid": {},
+            "dup_num": 2,
+        },
+    }
+
+    parser.handle_finding_dup_names()
+
+    assert list(parser.findings) == [first_sid]
+    merged = parser.findings[first_sid]
+    assert merged["title"] == "Duplicate Finding"
+    assert merged["description"] == "First description\nSecond description"
+    assert merged["recommendations"] == "Fix it"
+    assert merged["references"] == "Ref A\nRef B"
+    assert merged["tags"] == ["one", "two"]
+    assert parser.reports[report_sid]["findings"] == [first_sid]
+    assert "dup_num" not in merged
+
+
+def test_all_fields_strategy_does_not_merge_different_rich_text():
+    parser = CSVParser()
+    parser.set_finding_merge_strategy("all_fields")
+
+    report_sid = "report-1"
+    first_sid = "finding-1"
+    second_sid = "finding-2"
+    parser.reports = {report_sid: {"sid": report_sid, "name": "Report", "findings": [first_sid, second_sid]}}
+    parser.assets = {}
+    parser.findings = {
+        first_sid: {
+            "sid": first_sid,
+            "report_sid": report_sid,
+            "title": "Duplicate Finding",
+            "severity": "High",
+            "status": "Open",
+            "description": "First description",
+            "recommendations": "Fix it",
+            "references": "Ref A",
+            "tags": [],
+            "fields": {},
+            "assets": [],
+            "affected_asset_sid": {},
+            "dup_num": 1,
+        },
+        second_sid: {
+            "sid": second_sid,
+            "report_sid": report_sid,
+            "title": "Duplicate Finding",
+            "severity": "High",
+            "status": "Open",
+            "description": "Second description",
+            "recommendations": "Fix it",
+            "references": "Ref A",
+            "tags": [],
+            "fields": {},
+            "assets": [],
+            "affected_asset_sid": {},
+            "dup_num": 2,
+        },
+    }
+
+    parser.handle_finding_dup_names()
+
+    assert len(parser.findings) == 2
+    assert parser.findings[first_sid]["title"] == "Duplicate Finding"
+    assert parser.findings[second_sid]["title"] == "Duplicate Finding (2)"
