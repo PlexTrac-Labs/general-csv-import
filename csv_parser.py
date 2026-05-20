@@ -760,11 +760,11 @@ class CSVParser():
     #--- END Asset---
 
 
-    def __init__(self):
+    def __init__(self, header_mapping=None):
         """
         
         """
-        self.csv_headers_mapping: dict = deepcopy(self.csv_headers_mapping_template)
+        self.csv_headers_mapping: dict = deepcopy(header_mapping) if header_mapping is not None else deepcopy(self.csv_headers_mapping_template)
         self.csv_data: list = None
         self.parser_progress: int = None
 
