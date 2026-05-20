@@ -55,7 +55,10 @@ def _do(http_method: str, base_url: str, headers: dict, endpoint: str, name: str
         # Log HTTP params and perform an HTTP request, catching and re-raising any exceptions
         try:
             log.debug(log_line_pre)
-            response = requests.request(method=http_method, url=full_url, verify=settings.verify_ssl, headers=headers, json=data, files=files)
+            if files:
+                response = requests.request(method=http_method, url=full_url, verify=settings.verify_ssl, headers=headers, data=data, files=files)
+            else:
+                response = requests.request(method=http_method, url=full_url, verify=settings.verify_ssl, headers=headers, json=data, files=files)
         except requests.exceptions.RequestException as e:
             if retries < settings.retries:
                 retries += 1
