@@ -1,12 +1,18 @@
 from typing import List
 import argparse
+import io
+import json
 import os
 
 import utils.log_handler as logger
 log = logger.log
 import settings
 from csv_parser import CSVParser
+from utils.auth_handler import Auth
 import utils.input_utils as input
+import utils.general_utils as utils
+import utils.data_utils as data
+import api
 import mappings
 
 
@@ -72,8 +78,75 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Optional finding merge strategy.",
     )
     parser.add_argument("--output-dir", default="exported_ptracs", help="Directory for generated PTRAC files.")
+    parser.add_argument("--import-to-plextrac", action="store_true", help="Import generated PTRAC reports into PlexTrac.")
+    parser.add_argument("--instance-url", default="", help="PlexTrac instance URL for import mode.")
+    parser.add_argument("-u", "--username", default="", help="PlexTrac username for import mode.")
+    parser.add_argument("-p", "--password", default="", help="PlexTrac password for import mode.")
     parser.add_argument("--return-json", action="store_true", help=argparse.SUPPRESS)
     return parser
+
+
+def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
+    auth = Auth(args)
+    auth.handle_authentication()
+
+    clients = []
+    if not data.get_page_of_clients(clients=clients, auth=auth):
+        log.critical("Could not load clients from PlexTrac. Exiting...")
+        exit(1)
+    if len(clients) < 1:
+        log.critical("Did not find any clients in PlexTrac instance. Exiting...")
+        exit(1)
+
+    reports = []
+    if not data.get_page_of_reports(reports=reports, auth=auth):
+        log.critical("Could not load reports from PlexTrac. Exiting...")
+        exit(1)
+
+    report_names_by_client_id = {}
+    for report in reports:
+        report_names_by_client_id.setdefault(report["client_id"], []).append(report["name"])
+
+    failed_reports = []
+    for ptrac in ptracs:
+        client_name = ptrac.get("client_info", {}).get("name", "")
+        report_name = ptrac.get("report_info", {}).get("name", "")
+        if not client_name or not report_name:
+            log.error("Generated PTRAC is missing client or report name. Skipping...")
+            failed_reports.append(f"Client: {client_name} | Report: {report_name}")
+            utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+            continue
+
+        matching_clients = [client for client in clients if client_name == client["name"]]
+        if len(matching_clients) == 0:
+            log.error(f"Mapped client name '{client_name}' does not exist in PlexTrac. Skipping...")
+            failed_reports.append(f"Client: {client_name} | Report: {report_name}")
+            utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+            continue
+
+        client_id = matching_clients[0]["client_id"]
+        if report_name in report_names_by_client_id.get(client_id, []):
+            log.warning(f"Report '{report_name}' already exists under client '{client_name}'. Skipping...")
+            failed_reports.append(f"Client: {client_name} | Report: {report_name}")
+            utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+            continue
+
+        try:
+            file_name = f"{report_name}.json"
+            file_buf = io.BytesIO(json.dumps(ptrac, ensure_ascii=False).encode("utf-8"))
+            file_buf.seek(0)
+            multipart_form_data = {"file": (file_name, file_buf, "application/json")}
+            api.reports.import_ptrac_report(auth.base_url, auth.get_auth_headers(), client_id, multipart_form_data)
+            log.success(f"Imported report '{report_name}' to client '{client_name}'")
+        except Exception as e:
+            log.error(f"Could not import report '{report_name}'. Skipping...\n{e}")
+            failed_reports.append(f"Client: {client_name} | Report: {report_name}")
+            utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+
+    if failed_reports:
+        log.error(f"Finished importing with {len(failed_reports)} failed report(s). Failed PTRAC files were saved to failed_ptracs.")
+    else:
+        log.success(f"Finished importing {len(ptracs)} report(s).")
 
 
 def run(args: argparse.Namespace):
@@ -102,6 +175,11 @@ def run(args: argparse.Namespace):
 
     if args.return_json:
         return parser.save_data_as_ptrac(return_ptrac_jsons=True)
+
+    if args.import_to_plextrac:
+        ptracs = parser.save_data_as_ptrac(return_ptrac_jsons=True)
+        import_ptracs_to_plextrac(ptracs, args)
+        return None
 
     os.makedirs(args.output_dir, exist_ok=True)
     parser.save_data_as_ptrac(folder_path=args.output_dir)
