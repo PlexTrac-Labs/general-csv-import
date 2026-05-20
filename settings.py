@@ -4,7 +4,11 @@ import logging
 # LOGGING
 console_log_level = logging.INFO
 file_log_level = logging.INFO
-save_logs_to_file = True
+save_logs_to_file = False
+
+# Flag to run the script in interactive mode (with interactive prompts)
+# If True, the script will prompt the user for input when required info is missing
+interactive = True
 
 # REQUESTS
 # if the Plextrac instance is running on https without valid certs, requests will respond with cert error
