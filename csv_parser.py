@@ -162,7 +162,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['assignedTo']
+            'path': ['assignedTo'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
             # format email
         },
         'finding_created_at': {
@@ -171,7 +173,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "DATE_EPOCH",
             'input_blanks': False,
-            'path': ['createdAt'] # validate
+            'path': ['createdAt'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_closed_at': {
             'id': 'finding_closed_at',
@@ -179,7 +183,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "DATE_EPOCH",
             'input_blanks': False,
-            'path': ['closedAt'] # validate
+            'path': ['closedAt'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_last_updated_at': {
             'id': 'finding_last_updated_at',
@@ -187,7 +193,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "DATE_EPOCH",
             'input_blanks': False,
-            'path': ['last_update'] # validate
+            'path': ['last_update'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_description': {
             'id': 'finding_description',
@@ -195,7 +203,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['description']
+            'path': ['description'],
+            'merge_type': 'RICH_TEXT',
+            'merge_override': None,
         },
         'finding_recommendations': {
             'id': 'finding_recommendations',
@@ -203,7 +213,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['recommendations']
+            'path': ['recommendations'],
+            'merge_type': 'RICH_TEXT',
+            'merge_override': None,
         },
         'finding_references': {
             'id': 'finding_references',
@@ -211,7 +223,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['references']
+            'path': ['references'],
+            'merge_type': 'RICH_TEXT',
+            'merge_override': None,
         },
         'finding_severity': {
             'id': 'finding_severity',
@@ -219,7 +233,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "SEVERITY",
             'input_blanks': False,
-            'path': ['severity'] # validate
+            'path': ['severity'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_status': {
             'id': 'finding_status',
@@ -227,7 +243,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': "STATUS",
             'input_blanks': False,
-            'path': ['status'] # validate
+            'path': ['status'], # validate
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_sub_status': {
             'id': 'finding_sub_status',
@@ -235,7 +253,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['subStatus']
+            'path': ['subStatus'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_tag': {
             'id': 'finding_tag',
@@ -243,7 +263,9 @@ class CSVParser():
             'data_type' : 'TAG',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['tags']
+            'path': ['tags'],
+            'merge_type': 'LIST',
+            'merge_override': None,
         },
         'finding_multi_tag': {
             'id': 'finding_multi_tag',
@@ -251,7 +273,9 @@ class CSVParser():
             'data_type' : 'MULTI_TAG',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['tags']
+            'path': ['tags'],
+            'merge_type': 'LIST',
+            'merge_override': None,
         },
         'finding_title': {
             'id': 'finding_title',
@@ -259,7 +283,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['title']
+            'path': ['title'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_custom_field': {
             'id': 'finding_custom_field',
@@ -267,7 +293,9 @@ class CSVParser():
             'data_type' : 'KEY_CUSTOM_FIELD',
             'validation_type': None,
             'input_blanks': True,
-            'path': ['fields']
+            'path': ['fields'],
+            'merge_type': 'RICH_TEXT',
+            'merge_override': None,
         },
         # cvss scores
         'finding_cvss3_1_overall': {
@@ -276,7 +304,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': 'FLOAT', # validate
             'input_blanks': False,
-            'path': ['risk_score', 'CVSS3_1', 'overall']
+            'path': ['risk_score', 'CVSS3_1', 'overall'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss3_1_vector': {
             'id': 'finding_cvss3_1_vector',
@@ -284,7 +314,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': 'CVSS_VECTOR', # validate
             'input_blanks': False,
-            'path': ['risk_score', 'CVSS3_1', 'vector']
+            'path': ['risk_score', 'CVSS3_1', 'vector'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss3_vector': {
             'id': 'finding_cvss3_vector',
@@ -292,7 +324,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss3', 'calculation']
+            'path': ['fields', 'scores', 'cvss3', 'calculation'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss3_value': {
             'id': 'finding_cvss3_value',
@@ -300,7 +334,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss3', 'value']
+            'path': ['fields', 'scores', 'cvss3', 'value'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss3_label': {
             'id': 'finding_cvss3_label',
@@ -308,7 +344,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss3', 'label']
+            'path': ['fields', 'scores', 'cvss3', 'label'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss2_vector': {
             'id': 'finding_cvss2_vector',
@@ -316,7 +354,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss', 'calculation']
+            'path': ['fields', 'scores', 'cvss', 'calculation'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss2_value': {
             'id': 'finding_cvss2_value',
@@ -324,7 +364,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss', 'value']
+            'path': ['fields', 'scores', 'cvss', 'value'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss2_label': {
             'id': 'finding_cvss2_label',
@@ -332,7 +374,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'cvss', 'label']
+            'path': ['fields', 'scores', 'cvss', 'label'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss_general_vector': {
             'id': 'finding_cvss_general_vector',
@@ -340,7 +384,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'general', 'calculation']
+            'path': ['fields', 'scores', 'general', 'calculation'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss_general_value': {
             'id': 'finding_cvss_general_value',
@@ -348,7 +394,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'general', 'value']
+            'path': ['fields', 'scores', 'general', 'value'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cvss_general_label': {
             'id': 'finding_cvss_general_label',
@@ -356,7 +404,9 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields', 'scores', 'general', 'label']
+            'path': ['fields', 'scores', 'general', 'label'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
         },
         'finding_cve': {
             'id': 'finding_cve_name',
@@ -364,7 +414,9 @@ class CSVParser():
             'data_type' : 'CVE',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['common_identifiers', 'CVE', 'INDEX']
+            'path': ['common_identifiers', 'CVE', 'INDEX'],
+            'merge_type': 'LIST',
+            'merge_override': None,
             # format CVE-2022-12345
         },
         'finding_cwe': {
@@ -373,7 +425,9 @@ class CSVParser():
             'data_type' : 'CWE',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['common_identifiers', 'CWE', 'INDEX']
+            'path': ['common_identifiers', 'CWE', 'INDEX'],
+            'merge_type': 'LIST',
+            'merge_override': None,
             # format number i.e. 501
         },
         # ASSET INFO
@@ -781,7 +835,6 @@ class CSVParser():
         
         """
         self.data_mapping = deepcopy(self.data_mapping)
-        self._add_finding_merge_metadata()
         self.csv_headers_mapping: dict = deepcopy(header_mapping) if header_mapping is not None else deepcopy(self.csv_headers_mapping_template)
         self.csv_data: list = None
         self.parser_progress: int = None
@@ -819,32 +872,6 @@ class CSVParser():
 
         self.client_template['name'] = f'client_name_{self.parser_date}'
         self.report_template['name'] = f'report_name_{self.parser_date}'
-
-
-    def _add_finding_merge_metadata(self) -> None:
-        rich_text_fields = {
-            "finding_description",
-            "finding_recommendations",
-            "finding_references",
-            "finding_custom_field",
-        }
-        list_fields = {
-            "finding_tag",
-            "finding_multi_tag",
-            "finding_cve",
-            "finding_cwe",
-        }
-
-        for key, mapping in self.data_mapping.items():
-            if mapping["object_type"] != "FINDING":
-                continue
-            if key in rich_text_fields:
-                mapping.setdefault("merge_type", "RICH_TEXT")
-            elif key in list_fields:
-                mapping.setdefault("merge_type", "LIST")
-            else:
-                mapping.setdefault("merge_type", "SCALAR")
-            mapping.setdefault("merge_override", None)
 
 
     #----------getters and setter----------

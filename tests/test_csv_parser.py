@@ -26,28 +26,40 @@ def test_csv_parser_uses_template_mapping_when_no_mapping_is_injected():
     assert parser.csv_headers_mapping is not CSVParser.csv_headers_mapping_template
 
 
-def test_finding_mappings_have_merge_metadata():
-    parser = CSVParser()
+def test_csv_parser_does_not_add_finding_merge_metadata_at_runtime():
+    assert not hasattr(CSVParser, "_add_finding_merge_metadata")
 
+
+def test_finding_mappings_have_merge_metadata_on_static_data_mapping():
     finding_mappings = {
         key: mapping
-        for key, mapping in parser.data_mapping.items()
+        for key, mapping in CSVParser.data_mapping.items()
         if mapping["object_type"] == "FINDING"
     }
 
     assert finding_mappings["finding_description"]["merge_type"] == "RICH_TEXT"
     assert finding_mappings["finding_recommendations"]["merge_type"] == "RICH_TEXT"
     assert finding_mappings["finding_references"]["merge_type"] == "RICH_TEXT"
+    assert finding_mappings["finding_custom_field"]["merge_type"] == "RICH_TEXT"
+    assert finding_mappings["finding_tag"]["merge_type"] == "LIST"
     assert finding_mappings["finding_multi_tag"]["merge_type"] == "LIST"
+    assert finding_mappings["finding_cve"]["merge_type"] == "LIST"
+    assert finding_mappings["finding_cwe"]["merge_type"] == "LIST"
     assert finding_mappings["finding_severity"]["merge_type"] == "SCALAR"
     assert all("merge_type" in mapping for mapping in finding_mappings.values())
     assert all("merge_override" in mapping for mapping in finding_mappings.values())
+    assert all(mapping["merge_override"] is None for mapping in finding_mappings.values())
+
+
+def test_parser_instance_inherits_static_finding_merge_metadata():
+    parser = CSVParser()
+
+    assert parser.data_mapping["finding_description"]["merge_type"] == "RICH_TEXT"
+    assert parser.data_mapping["finding_severity"]["merge_type"] == "SCALAR"
 
 
 def test_finding_last_updated_mapping_is_available():
-    parser = CSVParser()
-
-    mapping = parser.data_mapping["finding_last_updated_at"]
+    mapping = CSVParser.data_mapping["finding_last_updated_at"]
 
     assert mapping["object_type"] == "FINDING"
     assert mapping["data_type"] == "DETAIL"

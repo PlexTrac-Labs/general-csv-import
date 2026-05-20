@@ -10,7 +10,6 @@ class Auth():
     
     def __init__(self, args:argparse.Namespace):
         self.base_url = args.instance_url
-        self.cf_token = None
         self.username = args.username
         self.password = args.password
         self.tenant_id = None
@@ -21,10 +20,6 @@ class Auth():
 
     def add_auth_header(self, authorization_token):
         self.auth_headers["Authorization"] = authorization_token
-
-
-    def add_cf_auth_header(self, cf_token):
-        self.auth_headers["cf-access-token"] = cf_token
 
 
     def get_auth_headers(self):
@@ -52,35 +47,23 @@ class Auth():
         else:
             log.info(f'Using instance_url from config...')
 
-        #validate
         try:
-            response = api.tenant.root_request(self.base_url, {}) # non authenticated endpoint - does not require any headers - used to see if we can connect to the api
+            response = api.tenant.root_request(self.base_url, {})
             log.debug(response)
-            if not response.has_json_response: # if the base_url is not valid, the response will not contain any JSON
+            if not response.has_json_response:
                 if input.retry("Could not validate URL. Either the API is offline or it was entered incorrectly\nExample: https://company.plextrac.com", 
                              "Could not validate URL. Either the API is offline or it was entered incorrectly"):
-                    self.cf_token = None
                     self.base_url = None
                     return self.handle_instance_url()
+                return
 
-            try:
-                if response.json.get('text') == "Authenticate at /authenticate":
-                    log.success("Validated instance URL")
-                    
-            except Exception as e: # potential plextrac internal instance running behind Cloudflare
-                if not self.cf_token:
-                    option = input.user_options("That URL points to a running verson of Plextrac. However, the API did not respond.\nThere might be an additional layer of security. Try adding Cloudflare auth token?", 
-                                               "Do you want to try adding a Cloudflare token?", 
-                                               ['y', 'n'],
-                                               "That URL points to a running version of Plextrac. However, the API did not respond. There might be an additional layer of security requiring a Cloudflare token.")    
-                    if option == 'y':
-                        return self.handle_cf_instance_url()
-                else:
-                    return self.handle_cf_instance_url()
-            
-                if input.retry("Could not validate instance URL.", "Could not validate instance URL"):
-                    self.cf_token = None
-                    return self.handle_instance_url()
+            if response.json.get('text') == "Authenticate at /authenticate":
+                log.success("Validated instance URL")
+                return
+
+            if input.retry("Could not validate instance URL.", "Could not validate instance URL"):
+                self.base_url = None
+                return self.handle_instance_url()
 
         except Exception as e:
             log.exception(e)
@@ -88,28 +71,6 @@ class Auth():
                          "Could not validate URL. Either the API is offline or it was entered incorrectly"):
                 self.base_url = None
                 return self.handle_instance_url()
-
-
-    def handle_cf_instance_url(self):
-        """
-        handles extra layer of Cloudflare authorization
-        plextrac test instances are hosted behind a Cloudflare wall that requires another layer of authorization
-        """
-        if not self.cf_token:
-            self.cf_token = input.prompt_user("Please enter your active 'CF_Authorization' token", 
-                                            "Cloudflare token is required but not provided")
-        else:
-            log.info(f'Using cf_token from config...')
-
-        response = api.tenant.root_request(self.base_url, headers={"cf-access-token": self.cf_token})
-            
-        if response.json.get('text') != "Authenticate at /authenticate":
-            if input.retry("Could not validate instance URL.", "Could not validate instance URL with Cloudflare token"):
-                self.cf_token = None
-                return self.handle_instance_url()
-
-        self.add_cf_auth_header(self.cf_token)
-        log.success("Validated instance URL")
 
 
     def handle_authentication(self):
