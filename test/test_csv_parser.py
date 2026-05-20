@@ -158,3 +158,51 @@ def test_all_fields_strategy_does_not_merge_different_rich_text():
     assert len(parser.findings) == 2
     assert parser.findings[first_sid]["title"] == "Duplicate Finding"
     assert parser.findings[second_sid]["title"] == "Duplicate Finding (2)"
+
+
+def test_add_asset_to_finding_merges_existing_affected_asset_fields():
+    parser = CSVParser()
+    parser.asset_merge_strategy = "user_defined_fields"
+    finding_sid = "finding-1"
+    first_asset_sid = "asset-1"
+    second_asset_sid = "asset-2"
+    affected_fields_sid = "affected-2"
+    parser.assets = {
+        first_asset_sid: {"is_multi": False},
+        second_asset_sid: {"is_multi": False},
+    }
+    parser.findings = {
+        finding_sid: {"affected_asset_sid": affected_fields_sid}
+    }
+    parser.affected_assets = {
+        affected_fields_sid: {
+            "status": "Closed",
+            "ports": {443: {"number": "443"}},
+            "vulnerableParameters": ["param2"],
+            "notes": "second note",
+        }
+    }
+    finding = {
+        "affected_assets": {
+            "asset-original": {
+                "id": "asset-original",
+                "status": "Open",
+                "ports": {80: {"number": "80"}},
+                "vulnerableParameters": ["param1"],
+                "notes": "first note",
+            }
+        }
+    }
+    new_asset = {
+        "id": "asset-original",
+        "ports": {},
+        "vulnerableParameters": [],
+    }
+
+    result = parser.add_asset_to_finding(finding, new_asset, finding_sid, second_asset_sid)
+
+    affected_asset = result["affected_assets"]["asset-original"]
+    assert affected_asset["status"] == "Closed"
+    assert affected_asset["ports"] == {80: {"number": "80"}, 443: {"number": "443"}}
+    assert sorted(affected_asset["vulnerableParameters"]) == ["param1", "param2"]
+    assert affected_asset["notes"] == "first note\nsecond note"

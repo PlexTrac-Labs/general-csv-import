@@ -1151,7 +1151,29 @@ class CSVParser():
             affected_asset_fields = self.affected_assets[self.findings[finding_sid]['affected_asset_sid']]
         
         affected_asset.update(affected_asset_fields)
-        finding['affected_assets'][asset_id] = affected_asset
+
+        if asset_id in finding['affected_assets']:
+            existing_affected_asset = finding['affected_assets'][asset_id]
+            existing_affected_asset['status'] = affected_asset.get('status', existing_affected_asset.get('status'))
+            existing_affected_asset['locationUrl'] = affected_asset.get('locationUrl', "") if affected_asset.get('locationUrl', "") != "" else existing_affected_asset.get('locationUrl', "")
+            existing_affected_asset['ports'].update(affected_asset.get('ports', {}))
+            existing_affected_asset['vulnerableParameters'] = list(
+                set(existing_affected_asset.get('vulnerableParameters', []) + affected_asset.get('vulnerableParameters', []))
+            )
+
+            if self.asset_merge_strategy in ["user_defined_fields", "all_fields"]:
+                notes_1 = existing_affected_asset.get("notes", "")
+                notes_2 = affected_asset.get("notes", "")
+                if notes_1 and notes_2:
+                    existing_affected_asset['notes'] = f'{notes_1}\n{notes_2}'
+                else:
+                    existing_affected_asset['notes'] = notes_1 or notes_2
+            else:
+                existing_affected_asset['notes'] = affected_asset.get('notes', "") if affected_asset.get('notes', "") != "" else existing_affected_asset.get('notes', "")
+
+            finding['affected_assets'][asset_id] = existing_affected_asset
+        else:
+            finding['affected_assets'][asset_id] = affected_asset
 
         return finding
     
