@@ -30,6 +30,10 @@ def test_csv_parser_does_not_add_finding_merge_metadata_at_runtime():
     assert not hasattr(CSVParser, "_add_finding_merge_metadata")
 
 
+def test_csv_parser_does_not_expose_import_data_method():
+    assert not hasattr(CSVParser, "import_data")
+
+
 def test_finding_mappings_have_merge_metadata_on_static_data_mapping():
     finding_mappings = {
         key: mapping
@@ -241,7 +245,7 @@ def test_affected_asset_evidence_mapping_adds_evidence_object():
     assert evidence["assets"] == []
 
 
-def test_save_data_as_ptrac_can_return_ptrac_jsons_without_writing_files():
+def test_generate_ptrac_json_data_returns_ptrac_schema():
     parser = CSVParser()
     client_sid = "client-1"
     report_sid = "report-1"
@@ -293,7 +297,7 @@ def test_save_data_as_ptrac_can_return_ptrac_jsons_without_writing_files():
         }
     }
 
-    ptracs = parser.save_data_as_ptrac(return_ptrac_jsons=True)
+    ptracs = parser.generate_ptrac_json_data()
 
     assert len(ptracs) == 1
     assert ptracs[0]["client_info"]["name"] == "Client"

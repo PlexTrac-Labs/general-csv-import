@@ -3,14 +3,10 @@ import time
 import csv
 from uuid import uuid4
 from copy import copy, deepcopy
-import os
 import re
 
 import utils.log_handler as logger
 log = logger.log
-import api
-
-from utils.auth_handler import Auth
 import utils.general_utils as utils
 
 
@@ -716,7 +712,7 @@ class CSVParser():
     client_template_mock = { # need all arrays build out to prevent KEY ERR when adding data
         "sid": None,
         "name": f'Custom CSV Import Blank',
-        "tags": ["custom_csv_import"],
+        "tags": [],
         "custom_field": [],
         "description": "Client for custom csv import script findings. This Client was created because there was no client_name key mapped in the data to be imported.",
         "assets": [],
@@ -733,7 +729,7 @@ class CSVParser():
         'client_sid': None,
         "name": f'Custom CSV Import Report Blank',
         "status": "Published",
-        "tags": ["custom_csv_import"],
+        "tags": [],
         "custom_field": [],
         "start_date": None,
         "end_date": None,
@@ -791,7 +787,7 @@ class CSVParser():
             "CVE": [],
             "CWE": []
         },
-        'tags': ["custom_csv_import"],
+        'tags': [],
         'affected_assets': {},
         'assets': [],
         'exhibits': [],
@@ -814,7 +810,7 @@ class CSVParser():
         'hostname': "",
         'knownIps': [],
         'operating_system': [],
-        'tags': ["custom_csv_import"],
+        'tags': [],
         'ports': {}
     }
 
@@ -1904,141 +1900,9 @@ class CSVParser():
         return True
 
 
-    def import_data(self, auth: Auth):
+    def generate_ptrac_json_data(self) -> list:
         """
-        Calls Plextrac's API to creates new clients, reports and add findings and assets
-        """
-        # send API creation requests to Plextrac
-        log.info(f'---Importing data---')
-        # clients
-        for client in self.clients.values():
-            payload = deepcopy(client)
-            payload.pop("assets")
-            payload.pop("reports")
-            payload.pop("sid")
-            log.info(f'Creating client <{payload["name"]}>')
-            
-            response = api.clients.create_client(auth.base_url, auth.get_auth_headers(), payload)
-            if response.json.get("status") != "success":
-                log.warning(f'Could not create client. Skipping all reports and findings under this client...')
-                continue
-            log.success(f'Successfully created client!')
-            client_id = response.json.get("client_id")
-
-            # client assets
-            for asset_sid in client['assets']:
-                asset = self.assets[asset_sid]
-                if asset['original_asset_sid'] != None:
-                    log.info(f'Found existing asset <{asset["asset"]}>')
-                    # purposely not making a copy we need to update original asset list fields with new entries
-                    og_asset = self.assets[asset['original_asset_sid']]
-                    # update og asset - OS, known IPs, tags, and ports
-                    self.update_asset_list_fields(og_asset, asset)
-                    # update asset that was previously created - same as creation process
-                    payload = deepcopy(og_asset)
-                    payload.pop("sid")
-                    payload.pop("client_sid")
-                    payload.pop("finding_sid")
-                    payload.pop("dup_num")
-                    payload.pop("is_multi")
-                    log.info(f'Updating client asset <{payload["asset"]}>')
-                    response = api.assets.update_asset(auth.base_url, auth.get_auth_headers(), client_id, og_asset['asset_id'], payload)
-                    if response.json.get("message") != "success":
-                        log.warning(f'Could not update asset in PT with additional data. Skipping')
-                    # update this duplicate asset to point to the same asset_id that as assigned by PT when the og asset was created
-                    asset['asset_id'] = og_asset.get('asset_id', None)
-                    continue
-
-                payload = deepcopy(asset)
-                payload.pop("sid")
-                payload.pop("client_sid")
-                payload.pop("finding_sid")
-                payload.pop("dup_num")
-                payload.pop("is_multi")
-                log.info(f'Creating asset <{payload["asset"]}>')
-                response = api.assets.create_asset(auth.base_url, auth.get_auth_headers(), client_id, payload)
-                if response.json.get("message") != "success":
-                    asset['asset_id'] = None
-                    log.warning(f'Could not create asset. Skipping...')
-                    continue
-                log.success(f'Successfully created asset!')
-                asset['asset_id'] = response.json.get("id")
-
-            # reports
-            for report_sid in client['reports']:
-                payload = deepcopy(self.reports[report_sid])
-                payload.pop("findings")
-                payload.pop("sid")
-                payload.pop("client_sid")
-                log.info(f'Creating report <{payload["name"]}>')
-                response = api.reports.create_report(auth.base_url, auth.get_auth_headers(), client_id, payload)
-                if response.json.get("message") != "success":
-                    log.warning(f'Could not create report. Skipping all findings under this report...')
-                    continue
-                log.success(f'Successfully created report!')
-                report_id = response.json.get("report_id")
-
-                # findings
-                for finding_sid in self.reports[report_sid]['findings']:
-                    finding = self.findings[finding_sid]
-                    payload = deepcopy(finding)
-                    payload.pop("assets")
-                    payload.pop("sid")
-                    payload.pop("client_sid")
-                    payload.pop("report_sid")
-                    payload.pop("affected_asset_sid")
-                    payload.pop("exhibits", None)
-                    payload.pop("id", None)
-                    log.info(f'Creating finding <{payload["title"]}>')
-                    response = api.findings.create_finding(auth.base_url, auth.get_auth_headers(), client_id, report_id, payload)
-                    if response.json.get("message") != "success":
-                        log.warning(f'Could not create finding. Skipping...')
-                        continue
-                    log.success(f'Successfully created finding!')
-                    finding_id = response.json.get("flaw_id")
-
-                    # update finding with asset info
-                    if len(finding['assets']) > 0:
-                        log.info(f'Updating finding <{finding["title"]}> with asset information')
-
-                        response = api.findings.get_finding(auth.base_url, auth.get_auth_headers(), client_id, report_id, finding_id)
-                        pt_finding = response.json
-                        # when creating a finding certain fields are not validated (cwes, cvss3.1 vector, etc.). IF these fields have invalid data that
-                        # would prevent an autosave, the finding will be created successfully, but then crash the api when the finding is called the first time
-                        # - since the api crashes the best this script can do is inform the user and exit
-                        # - instead ideally make sure findings are created with valid data
-
-                        num_assets_to_update = 0
-                        for asset_sid in finding['assets']:
-                            pt_asset_id = self.assets[asset_sid].get('asset_id', None)
-                            if pt_asset_id == None:
-                                log.warning(f'Asset \'{self.assets[asset_sid]["asset"]}\' was not created successfully. Cannot add to finding. Skipping...')
-                            else:
-                                response = api.assets.get_asset(auth.base_url, auth.get_auth_headers(), client_id, pt_asset_id)
-                                pt_asset  = response.json
-                                pt_finding = self.add_asset_to_finding(pt_finding, pt_asset, finding_sid, asset_sid)
-                                num_assets_to_update += 1
-
-                        if num_assets_to_update < 1:
-                            continue
-                    
-                        if num_assets_to_update != len(finding['assets']):
-                            log.warning(f'Some assets cannot be adding. Adding {num_assets_to_update}/{len(finding["assets"])}')
-
-                        response = api.findings.update_finding(auth.base_url, auth.get_auth_headers(), client_id, report_id, finding_id, pt_finding)
-                        if response.json.get("message") != "success":
-                            log.warning(f'Could not update finding. Skipping...')
-                            continue
-                        log.success(f'Successfully added asset(s) info to finding!')
-
-    def save_data_as_ptrac(self, folder_path:str="exported_ptracs", user_file_name:str|None=None, return_ptrac_jsons: bool = False) -> list:
-        """
-        Creates and adds all relevant data to generate a ptrac file for each report found while parsing
-
-        :param folder_path: folder path of where to save the PTRAC, defaults to "exported-ptracs"
-        :type folder_path: str, optional
-        :param file_name: file name without extension, defaults to None
-        :type file_name: str | None, optional - if not set, a file name will be generated based on the parsed client and report names
+        Creates PTRAC JSON data for each report found while parsing.
         """        
         ptracs = []
         ptrac_template = {
@@ -2227,25 +2091,6 @@ class CSVParser():
 
                 ptrac['summary']['ReportAssets'] = report_assets
 
-                if return_ptrac_jsons:
-                    ptracs.append(ptrac)
-                else:
-                    try:
-                        os.mkdir(folder_path)
-                    except FileExistsError as e:
-                        log.debug(f'Could not create directory {folder_path}, already exists')
-
-                    if user_file_name == None:
-                        file_name = f'{utils.sanitize_file_name(client["name"])}_{utils.sanitize_file_name(report["name"])}_{self.parser_time}'
-                    else:
-                        file_name = user_file_name
-
-                    existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
-                    export_file_name = utils.increment_file_name(file_name, existing_files)
-                    
-                    file_path = f'{folder_path}/{export_file_name}.ptrac'
-                    with open(f'{file_path}', 'w') as file:
-                        json.dump(ptrac, file)
-                        log.success(f'Saved new PTRAC \'{export_file_name}.ptrac\'')
+                ptracs.append(ptrac)
 
         return ptracs

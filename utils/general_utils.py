@@ -297,10 +297,13 @@ def save_json_as_ptrac_file(ptrac_data: dict, file_name: str = "", folder_path: 
     """
     Save a PTRAC JSON dictionary to a .ptrac file.
     """
-    report_name = ptrac_data.get("report_info", {}).get("name", "")
     if file_name:
-        report_name = file_name
-    report_name = sanitize_file_name(report_name)
+        export_name = sanitize_file_name(file_name)
+    else:
+        client_name = sanitize_file_name(ptrac_data.get("client_info", {}).get("name", ""))
+        report_name = sanitize_file_name(ptrac_data.get("report_info", {}).get("name", ""))
+        timestamp = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(time.time()))
+        export_name = f'{client_name}_{report_name}_{timestamp}'
 
     try:
         os.mkdir(folder_path)
@@ -308,7 +311,7 @@ def save_json_as_ptrac_file(ptrac_data: dict, file_name: str = "", folder_path: 
         pass
 
     existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
-    export_file_name = increment_file_name(report_name, existing_files)
+    export_file_name = increment_file_name(export_name, existing_files)
 
     file_path = f'{folder_path}/{export_file_name}.ptrac'
     with open(f'{file_path}', 'w') as file:

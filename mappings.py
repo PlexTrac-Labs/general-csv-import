@@ -147,6 +147,9 @@ def load_data_file_general_csv(data_file_path:str = "") -> LoadedCSVData:
     """
     return input.load_csv_data("Enter file path to custom scan CSV file to import", csv_file_path=data_file_path)
 
+def load_header_mapping_file(headers_file_path: str = "") -> LoadedCSVData:
+    return input.load_csv_data("Enter file path to header mapping CSV file", csv_file_path=headers_file_path)
+
 def load_data_file_general_json(data_file_path:str = "") -> LoadedJSONData:
     """
     Loads a JSON file containing data to be imported in the script
@@ -198,6 +201,16 @@ def verify_example_csv_payload(loaded_file_data:LoadedCSVData) -> bool:
         log.critical("verify_example_csv_payload: no data rows present")
         return False
 
+    return True
+
+def verify_header_mapping_payload(loaded_file_data: LoadedCSVData) -> bool:
+    csv_data = loaded_file_data.csv
+    if not isinstance(csv_data, list) or any(not isinstance(row, list) for row in csv_data):
+        log.critical("verify_header_mapping_payload: top-level data is not a List[List[str]]")
+        return False
+    if len(csv_data) < 2:
+        log.critical("verify_header_mapping_payload: CSV must include a header row and at least one data row")
+        return False
     return True
 
 def verify_example_json_payload(loaded_file_data:LoadedJSONData) -> bool:
@@ -452,6 +465,26 @@ def create_temp_data_csv_example_json(loaded_file_data: LoadedJSONData, parser: 
     
     return temp_csv
 
+def create_temp_data_csv_header_mapping(loaded_file_data: LoadedCSVData, parser: CSVParser) -> List[list]:
+    return loaded_file_data.csv
+
+def build_mapping_from_header_file(header_file: LoadedCSVData, parser: CSVParser) -> Dict[str, Dict[str, Any]]:
+    mapping = {}
+    mapping_keys = header_file.data[0] if header_file.data else []
+
+    for index, header in enumerate(header_file.headers):
+        mapping_key = mapping_keys[index].strip() if index < len(mapping_keys) and mapping_keys[index].strip() else "no_mapping"
+        if mapping_key not in parser.get_data_mapping_ids():
+            log.warning(f"Invalid mapping key '{mapping_key}' for header '{header}'. Marking as 'no_mapping'")
+            mapping_key = "no_mapping"
+        mapping[header] = {
+            "header": header,
+            "mapping_key": mapping_key,
+            "col_index": index,
+        }
+
+    return mapping
+
 # endregion ---
 
 
@@ -459,6 +492,7 @@ def create_temp_data_csv_example_json(loaded_file_data: LoadedJSONData, parser: 
 class MapType(str, Enum):
     EXAMPLE_CSV = "example_csv"
     EXAMPLE_JSON = "example_json"
+    HEADER_MAPPING = "header_mapping"
 
 class _MapSpec:
     """Lightweight container to provide .mapping / .load_data_function / .verify_function / .temp_csv_function."""
@@ -483,10 +517,19 @@ EXAMPLE_JSON = _MapSpec(
     temp_csv_function=create_temp_data_csv_example_json,
 )
 
+HEADER_MAPPING = _MapSpec(
+    mapping={},
+    load_data_function=load_data_file_general_csv,
+    verify_function=verify_header_mapping_payload,
+    temp_csv_function=create_temp_data_csv_header_mapping,
+)
+
 def resolve(map_type_str: str) -> _MapSpec:
     if map_type_str == MapType.EXAMPLE_CSV.value:
         return EXAMPLE_CSV
     if map_type_str == MapType.EXAMPLE_JSON.value:
         return EXAMPLE_JSON
+    if map_type_str == MapType.HEADER_MAPPING.value:
+        return HEADER_MAPPING
     raise ValueError(f"Unknown mapping type: {map_type_str}")
 # endregion

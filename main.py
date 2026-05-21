@@ -3,6 +3,7 @@ import argparse
 import io
 import json
 import os
+import yaml
 
 import utils.log_handler as logger
 log = logger.log
@@ -14,6 +15,14 @@ import utils.general_utils as utils
 import utils.data_utils as data
 import api
 import mappings
+
+
+def load_config_defaults(config_path: str = "config.yaml") -> dict:
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, "r", encoding="utf-8") as config_file:
+        config = yaml.safe_load(config_file) or {}
+    return config if isinstance(config, dict) else {}
 
 
 def handle_load_api_version(api_version: str, parser: CSVParser) -> None:
@@ -60,15 +69,17 @@ def load_data_into_parser(csv: List[list], parser: CSVParser) -> None:
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
+    config = load_config_defaults()
     parser = argparse.ArgumentParser(description="General CSV Import template parser")
-    parser.add_argument("-i", "--input", required=True, help="Path to input data file.")
+    parser.add_argument("--data-file-path", default=config.get("data_file_path", ""), help="Path to input data file.")
+    parser.add_argument("--headers-file-path", default=config.get("headers_file_path", ""), help="Path to customer header mapping CSV file.")
     parser.add_argument(
         "--type",
         choices=[map_type.value for map_type in mappings.MapType],
-        required=True,
+        default=config.get("type"),
         help="Parser mapping type to use.",
     )
-    parser.add_argument("--api-version", required=True, help="PlexTrac API version, e.g. '2.19.0'.")
+    parser.add_argument("--api-version", default=config.get("api_version", ""), help="PlexTrac API version, e.g. '2.19.0'.")
     parser.add_argument("--client-name", default="", help="Optional client name override for custom mappings.")
     parser.add_argument("--report-name", default="", help="Optional report name override for custom mappings.")
     parser.add_argument(
@@ -82,7 +93,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--instance-url", default="", help="PlexTrac instance URL for import mode.")
     parser.add_argument("-u", "--username", default="", help="PlexTrac username for import mode.")
     parser.add_argument("-p", "--password", default="", help="PlexTrac password for import mode.")
-    parser.add_argument("--return-json", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -150,12 +160,22 @@ def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
 
 
 def run(args: argparse.Namespace):
-    spec = mappings.resolve(args.type)
+    map_type = args.type or (mappings.MapType.HEADER_MAPPING.value if args.headers_file_path else None)
+    if map_type is None:
+        log.critical("No mapping type provided. Use --type or provide headers_file_path in config.yaml.")
+        exit(1)
+
+    spec = mappings.resolve(map_type)
     parser = CSVParser(header_mapping=spec.mapping)
     handle_load_api_version(args.api_version, parser)
 
-    log.info(f"Processing file '{args.input}' with mapping '{args.type}'")
-    loaded_file = spec.load_data_function(args.input)
+    # need to generate mapping from header file after spec is resolved and parser created for easier access to parser mapping keys
+    if map_type == mappings.MapType.HEADER_MAPPING.value:
+        header_file = mappings.load_header_mapping_file(args.headers_file_path)
+        parser.csv_headers_mapping = mappings.build_mapping_from_header_file(header_file, parser)
+
+    log.info(f"Processing file '{args.data_file_path}' with mapping '{map_type}'")
+    loaded_file = spec.load_data_function(args.data_file_path)
     if not spec.verify_function(loaded_file):
         log.critical("Data file is not valid. Exiting...")
         exit(1)
@@ -172,17 +192,15 @@ def run(args: argparse.Namespace):
         exit(1)
 
     parser.display_parser_results()
-
-    if args.return_json:
-        return parser.save_data_as_ptrac(return_ptrac_jsons=True)
+    ptracs = parser.generate_ptrac_json_data()
 
     if args.import_to_plextrac:
-        ptracs = parser.save_data_as_ptrac(return_ptrac_jsons=True)
         import_ptracs_to_plextrac(ptracs, args)
         return None
 
     os.makedirs(args.output_dir, exist_ok=True)
-    parser.save_data_as_ptrac(folder_path=args.output_dir)
+    for ptrac in ptracs:
+        utils.save_json_as_ptrac_file(ptrac, folder_path=args.output_dir)
     log.info(f"PTRAC creation complete. File(s) can be found in '{args.output_dir}' folder.")
     return None
 
