@@ -9,6 +9,8 @@ verify_ssl = true
 requests = "*"
 python-dateutil = "*"
 pyyaml = "*"
+xmltodict = "*"
+textile = "*"
 
 [requires]
-python_version = "3"
+python_version = "3.11"

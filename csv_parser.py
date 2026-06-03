@@ -1,13 +1,16 @@
+import base64
 import json
 import time
 import csv
 from uuid import uuid4
 from copy import copy, deepcopy
 import re
+import zipfile
 
 import utils.log_handler as logger
 log = logger.log
 import utils.general_utils as utils
+import mapping_utils.dradis_utils as dradis
 
 
 class CSVParser():
@@ -714,7 +717,7 @@ class CSVParser():
         "name": f'Custom CSV Import Blank',
         "tags": [],
         "custom_field": [],
-        "description": "Client for custom csv import script findings. This Client was created because there was no client_name key mapped in the data to be imported.",
+        "description": "",
         "assets": [],
         "reports": []
     }
@@ -826,7 +829,7 @@ class CSVParser():
     #--- END Asset---
 
 
-    def __init__(self, header_mapping=None):
+    def __init__(self, header_mapping=None, enable_rich_text_processing: bool = False):
         """
         
         """
@@ -848,6 +851,11 @@ class CSVParser():
         self.finding_merge_sid_map = {}
         self.asset_merge_strategy = None
 
+        # Dradis (and other ZIP-paired sources) rich-text support. Disabled by
+        # default so plain CSV/JSON imports keep their original text untouched.
+        self.zip_file_path = None
+        self.enable_rich_text_processing = enable_rich_text_processing
+
         self.client_template = deepcopy(self.client_template_mock)
         self.report_template = deepcopy(self.report_template_mock)
         self.finding_template = deepcopy(self.finding_template_mock)
@@ -859,12 +867,14 @@ class CSVParser():
         self.assets = {}
         self.affected_assets = {}
         self.evidence = {}
+        self.report_media = {}
 
         self.client_lookup = {}
         self.report_lookup = {}
         self.finding_lookup = {}
         self.asset_lookup = {}
         self.evidence_lookup = {}
+        self.report_media_lookup = {}
 
         self.client_template['name'] = f'client_name_{self.parser_date}'
         self.report_template['name'] = f'report_name_{self.parser_date}'
@@ -1465,7 +1475,7 @@ class CSVParser():
 
         for evidence in affected_asset['evidence']:
             if asset_sid is not None:
-                evidence['assets'] = [asset_sid]
+                evidence['assets'] = [str(asset_sid)]
             self.evidence[evidence['id']] = evidence
             self.evidence_lookup[(finding_sid, asset_sid, evidence['caption'])] = evidence['id']
 
@@ -1618,9 +1628,124 @@ class CSVParser():
         else:
             self.set_value(obj[path[0]], path[1:], value)
 
+    def _generate_report_media_file_name(self, image_file_name: str) -> str:
+        file_extension = ""
+        if "." in image_file_name:
+            file_extension = f'.{image_file_name.rsplit(".", 1)[1]}'
+        return f'{uuid4()}{file_extension}'
+
+    def _load_report_media(self, image_tag: str, image_node_id: str, image_file_name: str):
+        """
+        Load image bytes from the paired ZIP, base64 encode them, store them in
+        ``self.report_media``, and cache by normalized Dradis image tag.
+        """
+        normalized_image_tag = image_tag[1:-1]
+        if normalized_image_tag in self.report_media_lookup:
+            return self.report_media_lookup[normalized_image_tag]
+
+        if not self.zip_file_path:
+            log.warning(f'Could not load image \'{image_file_name}\'. No paired ZIP file is available. Ignoring...')
+            return None
+
+        try:
+            with zipfile.ZipFile(self.zip_file_path, "r") as zip_ref:
+                zip_member_path = f'{image_node_id}/{image_file_name}'
+                image_bytes = None
+
+                if zip_member_path in zip_ref.namelist():
+                    image_bytes = zip_ref.read(zip_member_path)
+                else:
+                    matching_zip_member = next(
+                        (
+                            file_name for file_name in zip_ref.namelist()
+                            if file_name.endswith(f'/{zip_member_path}') or file_name == zip_member_path
+                        ),
+                        None,
+                    )
+                    if matching_zip_member is not None:
+                        image_bytes = zip_ref.read(matching_zip_member)
+
+                if image_bytes is None:
+                    raise FileNotFoundError(f'Could not find image path \'{zip_member_path}\' in ZIP \'{self.zip_file_path}\'')
+
+            report_media_file_name = self._generate_report_media_file_name(image_file_name)
+            self.report_media[report_media_file_name] = {
+                "data": base64.b64encode(image_bytes).decode("utf-8")
+            }
+            self.report_media_lookup[normalized_image_tag] = report_media_file_name
+            return report_media_file_name
+        except FileNotFoundError as e:
+            log.error(f'Could not load image \'{image_file_name}\'. Ignoring...\n{e}')
+        except Exception as e:
+            log.error(e)
+        return None
+
+    def _build_image_replacement(self, image_ref: dradis.DradisImageReference) -> str:
+        new_image_tag = f"Missing image for tag '{image_ref.normalized_tag[1:-1]}'"
+        report_media_file_name = self._load_report_media(image_ref.normalized_tag, image_ref.node_id, image_ref.file_name)
+        if report_media_file_name is not None:
+            new_image_tag = f'<img src="/api/v1/uploads/{report_media_file_name}">'
+            if image_ref.caption:
+                new_image_tag = f'<figure class="image"><img src="/api/v1/uploads/{report_media_file_name}" ><figcaption>{image_ref.caption}</figcaption></figure>'
+        return new_image_tag
+
+    def add_image(self, value, field):
+        """
+        Replace Dradis image markers in a value with PlexTrac upload references.
+
+        Dradis provides a CSV and ZIP file. The ZIP file contains a folder
+        structure of images referenced by markers in rich text fields.
+        """
+        new_value = value
+        while isinstance(new_value, str):
+            image_ref = dradis.find_dradis_image_reference(new_value)
+            if image_ref is None:
+                break
+
+            log.debug(f'Found image tag in {field} at char {image_ref.start_index}')
+            log.debug(f'Parsed image from tag in project \'{image_ref.project_id}\' with file name \'{image_ref.file_name}\' in node \'{image_ref.node_id}\'. Loading image...')
+
+            new_image_tag = self._build_image_replacement(image_ref)
+            new_value = new_value[:image_ref.start_index] + new_image_tag + new_value[image_ref.end_index:]
+
+        return new_value
+
+    def replace_images_with_placeholders(self, value, field):
+        """
+        Hold Dradis image markers through Textile conversion so Textile does not
+        convert them into incorrect external image tags.
+        """
+        new_value = value
+        image_placeholders = {}
+        while isinstance(new_value, str):
+            image_ref = dradis.find_dradis_image_reference(new_value)
+            if image_ref is None:
+                break
+
+            log.debug(f'Found image tag in {field} at char {image_ref.start_index}')
+            log.debug(f'Parsed image from tag in project \'{image_ref.project_id}\' with file name \'{image_ref.file_name}\' in node \'{image_ref.node_id}\'. Loading image...')
+
+            placeholder = f"zzdradisimageplaceholder{len(image_placeholders)}zz"
+            image_placeholders[placeholder] = self._build_image_replacement(image_ref)
+            new_value = new_value[:image_ref.start_index] + placeholder + new_value[image_ref.end_index:]
+
+        return new_value, image_placeholders
+
+    def format_rich_text_value(self, value, header):
+        if not self.enable_rich_text_processing:
+            return value
+        new_value, image_placeholders = self.replace_images_with_placeholders(value, header)
+        new_value = utils.convert_textile_to_html(new_value)
+        for placeholder, image_tag in image_placeholders.items():
+            new_value = new_value.replace(placeholder, image_tag)
+        new_value = utils.strip_extra_lines(new_value, header)
+        return new_value
+
     # detail
     def add_detail(self, header, obj, mapping, value):
         path = mapping['path']
+        if mapping['id'] in ["client_description", "finding_description", "finding_recommendations", "finding_references", "asset_description"]:
+            value = self.format_rich_text_value(value, header)
         self.set_value(obj, path, value)
 
     # client/report custom field
@@ -1636,6 +1761,7 @@ class CSVParser():
     def add_key_label_value(self, header, obj, mapping, value):
         path = copy(mapping['path'])
         path.append(utils.format_key(header.strip()))
+        value = self.format_rich_text_value(value, header)
 
         label_value = {
             'label': header.strip(),
@@ -1658,6 +1784,8 @@ class CSVParser():
 
     # report narrative
     def add_label_text(self, header, obj, mapping, value):
+        value = self.format_rich_text_value(value, header)
+
         label_text = {
             'label': header.strip(),
             'text': value
@@ -1748,7 +1876,7 @@ class CSVParser():
     # evidence
     def add_evidence(self, header, obj, mapping, value):
         evidence = {
-            'id': uuid4(),
+            'id': str(uuid4()),
             'caption': header.strip(),
             'code': value,
             'type': 'CodeSample',
@@ -1786,7 +1914,14 @@ class CSVParser():
                 continue
 
             data_type = data_mapping['data_type']
-            value = self.validate_value(header, data_mapping, row[index])
+
+            # skip blank values that would be discarded anyway, before validation,
+            # so validated fields (dates, floats, etc.) do not log spurious errors
+            raw_value = row[index]
+            if not data_mapping['input_blanks'] and (raw_value == "" or raw_value is None):
+                continue
+
+            value = self.validate_value(header, data_mapping, raw_value)
 
             # determine whether to add blank values
             if data_mapping['input_blanks'] or (value != "" and value != None): 
@@ -1911,7 +2046,8 @@ class CSVParser():
             },
             "flaws_array": [],
             "summary": {
-                "ReportAssets": {}
+                "ReportAssets": {},
+                "ReportMedia": {}
             },
             "evidence": [],
             "client_info": {
@@ -1949,6 +2085,7 @@ class CSVParser():
                 ptrac = deepcopy(ptrac_template)
                 ptrac['client_info'] = client_info
                 ptrac['report_info'] = report_info
+                ptrac['summary']['ReportMedia'] = deepcopy(self.report_media)
 
                 # findings
                 for finding_sid in report['findings']:

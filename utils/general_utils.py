@@ -6,6 +6,11 @@ from typing import List
 from copy import copy, deepcopy
 import os
 
+try:
+    import textile
+except ImportError:
+    textile = None
+
 import utils.log_handler as logger
 log = logger.log
 
@@ -24,7 +29,7 @@ def format_key(string: str) -> str:
     :rtype: str
     """
     new_str = string.strip().lower()
-    return re.sub('[\W]', '', re.sub('[ -]', '_', new_str))
+    return re.sub(r'[\W]', '', re.sub(r'[ -]', '_', new_str))
 
 
 def add_tag(list: List[str], tag: str) -> None:
@@ -65,7 +70,7 @@ def try_parsing_date(possible_date_str: str) -> time.struct_time:
     :rtype: time.struct_time
     """
     error = None
-    accepted_data_formats = ['%m/%d/%Y', '%m-%d-%Y', '%m/%d/%y', '%m-%d-%y', '%Y/%m/%d', '%Y-%m-%d', '%m/%d/%Y %I:%M:%S %p', '%m/%d/%Y %H:%M']
+    accepted_data_formats = ['%m/%d/%Y', '%m-%d-%Y', '%m/%d/%y', '%m-%d-%y', '%Y/%m/%d', '%Y-%m-%d', '%m/%d/%Y %I:%M:%S %p', '%m/%d/%Y %H:%M', '%B %d, %Y', '%b %d, %Y']
     for fmt in accepted_data_formats:
         try:
             return time.strptime(possible_date_str, fmt)
@@ -240,6 +245,159 @@ def calculate_cvss3_base_score(vector: str) -> float:
         score = min(1.08 * (impact + exploitability), 10)
 
     return int(score * 10 + 0.999999) / 10
+
+
+def update_open_closing_tags(value: str, start_tag: str, end_tag: str, new_start_tag: str, new_end_tag: str, strip_br_tags: bool = False) -> str:
+    """
+    Replace matching open/close tag pairs while correctly handling nested pairs.
+
+    An ``end_tag`` is only replaced when there is a currently open ``start_tag``,
+    so unbalanced markers are left untouched. Set ``strip_br_tags`` to also remove
+    ``<br />`` tags (legacy behavior, off by default).
+
+    :param value: the string to process
+    :param start_tag: the opening marker to match (e.g. "`{")
+    :param end_tag: the closing marker to match (e.g. "}`")
+    :param new_start_tag: replacement for each matched opening marker
+    :param new_end_tag: replacement for each matched closing marker
+    :param strip_br_tags: whether to also strip <br /> tags, defaults to False
+    :return: the updated string
+    :rtype: str
+    """
+    if not isinstance(value, str):
+        return value
+
+    result: List[str] = []
+    open_count = 0
+    index = 0
+    length = len(value)
+    while index < length:
+        if start_tag and value.startswith(start_tag, index):
+            open_count += 1
+            result.append(new_start_tag)
+            index += len(start_tag)
+        elif end_tag and open_count > 0 and value.startswith(end_tag, index):
+            open_count -= 1
+            result.append(new_end_tag)
+            index += len(end_tag)
+        else:
+            result.append(value[index])
+            index += 1
+
+    new_value = "".join(result)
+    if strip_br_tags:
+        new_value = re.sub(r"<br\s*/?>", "", new_value)
+    return new_value
+
+
+def escape_angle_brackets(value: str) -> str:
+    """
+    Escape ``<`` and ``>`` so user-entered angle-bracket text is rendered as
+    literal text rather than interpreted as HTML.
+
+    :param value: string to escape
+    :return: escaped string
+    :rtype: str
+    """
+    if not isinstance(value, str):
+        return value
+    return value.replace("<", "&lt;").replace(">", "&gt;")
+
+
+def escape_non_html_angle_brackets(value: str) -> str:
+    """Semantic wrapper around :func:`escape_angle_brackets`."""
+    return escape_angle_brackets(value)
+
+
+def escape_dradis_placeholder_tags(value: str) -> str:
+    """Escape Dradis placeholder-style ``<token>`` text before HTML conversion."""
+    return escape_angle_brackets(value)
+
+
+def convert_textile_to_html(value: str) -> str:
+    """
+    Convert a Dradis/Textile rich-text value to HTML.
+
+    Angle brackets are escaped before conversion so user-entered text such as
+    ``<dradis.placeholder>`` cannot become executable or malformed HTML. If the
+    optional ``textile`` dependency is unavailable, the escaped value is returned
+    unchanged. Dradis/Textile inline code wrappers ("`{ ... }`") are removed.
+
+    :param value: the rich-text value to convert
+    :return: converted HTML string, or "" for blank/non-string input
+    :rtype: str
+    """
+    if not isinstance(value, str) or not value.strip():
+        return ""
+
+    escaped = escape_angle_brackets(value)
+    if textile is None:
+        html = escaped
+    else:
+        try:
+            html = textile.textile(escaped)
+        except Exception as e:
+            log.warning(f"Could not convert Textile to HTML, using escaped value. {e}")
+            html = escaped
+
+    return update_open_closing_tags(html, "`{", "}`", "", "")
+
+
+def _normalize_table_html(value: str) -> str:
+    """Normalize Dradis/Textile tables into the PlexTrac figure/table/tbody shape."""
+    # unwrap any tables already inside a figure so they are not double wrapped
+    value = re.sub(
+        r'<figure class="table">\s*(<table[^>]*>.*?</table>)\s*</figure>',
+        r"\1",
+        value,
+        flags=re.DOTALL,
+    )
+
+    def _replace(match: "re.Match") -> str:
+        inner = match.group("inner")
+        rows = re.findall(r"<tr\b.*?</tr>", inner, flags=re.DOTALL)
+        if not rows:
+            return match.group(0)
+        body = "".join(rows)
+        return f'<figure class="table"><table><tbody>{body}</tbody></table></figure>'
+
+    return re.sub(r"<table[^>]*>(?P<inner>.*?)</table>", _replace, value, flags=re.DOTALL)
+
+
+def strip_extra_lines(value: str, field: str = "") -> str:
+    """
+    Remove escaped newline/tab artifacts and normalize table HTML.
+
+    Content inside ``<pre><code>...</code></pre>`` blocks is preserved verbatim,
+    since whitespace there is significant.
+
+    :param value: the HTML string to clean
+    :param field: field name for logging context, defaults to ""
+    :return: cleaned HTML string
+    :rtype: str
+    """
+    if not isinstance(value, str):
+        return value
+
+    # protect <pre><code> blocks from whitespace cleanup
+    protected_blocks: dict = {}
+
+    def _protect(match: "re.Match") -> str:
+        key = f"\x00preblock{len(protected_blocks)}\x00"
+        protected_blocks[key] = match.group(0)
+        return key
+
+    cleaned = re.sub(r"<pre><code>.*?</code></pre>", _protect, value, flags=re.DOTALL)
+
+    cleaned = cleaned.replace("\\n", "").replace("\\t", "")
+    cleaned = re.sub(r"\n{2,}", "\n", cleaned)
+    cleaned = re.sub(r">\s*\n\s*<", "><", cleaned)
+    cleaned = _normalize_table_html(cleaned)
+
+    for key, original in protected_blocks.items():
+        cleaned = cleaned.replace(key, original)
+
+    return cleaned
 
 
 def sanitize_file_name(name:str, allow_spaces: bool = False) -> str:

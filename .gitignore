@@ -1,6 +1,11 @@
 config.yaml
 Pipfile.lock
 __pycache__/
+.pytest_cache/
+*_temp_mapped.csv
+
 exported_ptracs/
+failed_ptracs/
 testing_files/
+input_files/
 logs/

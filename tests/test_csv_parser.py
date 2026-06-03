@@ -1,4 +1,13 @@
+import zipfile
+
 from csv_parser import CSVParser
+
+
+def _make_zip_with_image(folder, node_id, file_name, image_bytes=b"\x89PNGfakedata"):
+    zip_path = folder / "dradis.zip"
+    with zipfile.ZipFile(zip_path, "w") as zip_ref:
+        zip_ref.writestr(f"{node_id}/{file_name}", image_bytes)
+    return str(zip_path)
 
 
 def test_csv_parser_accepts_injected_header_mapping_as_deep_copy():
@@ -314,3 +323,134 @@ def test_parser_initializes_object_lookup_maps():
     assert parser.finding_lookup == {}
     assert parser.asset_lookup == {}
     assert parser.evidence_lookup == {}
+
+
+def test_parser_initializes_report_media_state():
+    parser = CSVParser()
+
+    assert parser.report_media == {}
+    assert parser.report_media_lookup == {}
+    assert parser.zip_file_path is None
+    assert parser.enable_rich_text_processing is False
+
+
+def test_rich_text_processing_is_disabled_by_default():
+    parser = CSVParser()
+
+    value = "*should stay textile*"
+    assert parser.format_rich_text_value(value, "description") == value
+
+
+def test_rich_text_processing_can_be_enabled_for_dradis_values():
+    parser = CSVParser(enable_rich_text_processing=True)
+
+    result = parser.format_rich_text_value("*bold*", "description")
+
+    # textile converts emphasis to HTML when enabled
+    assert "<strong>bold</strong>" in result
+
+
+def test_dradis_placeholder_angle_brackets_are_escaped_in_narratives():
+    parser = CSVParser(enable_rich_text_processing=True)
+
+    result = parser.format_rich_text_value("Contains <dradis.placeholder> token", "Executive Summary")
+
+    assert "<dradis.placeholder>" not in result
+    assert "dradis.placeholder" in result
+
+
+def test_add_image_returns_missing_placeholder_without_zip():
+    parser = CSVParser(enable_rich_text_processing=True)
+
+    marker = "!/pro/projects/1/nodes/2/attachments/login.png!"
+    result = parser.add_image(marker, "description")
+
+    assert "Missing image for tag" in result
+    assert parser.report_media == {}
+
+
+def test_add_image_extracts_zip_image_bytes_into_report_media(tmp_path):
+    parser = CSVParser(enable_rich_text_processing=True)
+    parser.zip_file_path = _make_zip_with_image(tmp_path, "2", "login.png")
+
+    marker = "!/pro/projects/1/nodes/2/attachments/login.png!"
+    result = parser.add_image(marker, "description")
+
+    assert result.startswith('<img src="/api/v1/uploads/')
+    assert len(parser.report_media) == 1
+    media_entry = next(iter(parser.report_media.values()))
+    assert "data" in media_entry
+
+
+def test_add_image_ignores_display_metadata_when_matching_images(tmp_path):
+    parser = CSVParser(enable_rich_text_processing=True)
+    parser.zip_file_path = _make_zip_with_image(tmp_path, "2", "login.png")
+
+    value = (
+        "!{width:95.0%}/pro/projects/1/nodes/2/attachments/login.png! and "
+        "!{height:50%}/pro/projects/1/nodes/2/attachments/login.png!"
+    )
+    parser.add_image(value, "description")
+
+    # both markers point at the same image despite different metadata
+    assert len(parser.report_media) == 1
+
+
+def test_add_image_caption_becomes_figure_with_figcaption(tmp_path):
+    parser = CSVParser(enable_rich_text_processing=True)
+    parser.zip_file_path = _make_zip_with_image(tmp_path, "2", "login.png")
+
+    marker = "!/pro/projects/1/nodes/2/attachments/login.png(The login page)!"
+    result = parser.add_image(marker, "description")
+
+    assert '<figure class="image">' in result
+    assert "<figcaption>The login page</figcaption>" in result
+
+
+def test_add_image_blank_caption_uses_plain_img_tag(tmp_path):
+    parser = CSVParser(enable_rich_text_processing=True)
+    parser.zip_file_path = _make_zip_with_image(tmp_path, "2", "login.png")
+
+    marker = "!/pro/projects/1/nodes/2/attachments/login.png!"
+    result = parser.add_image(marker, "description")
+
+    assert result.startswith('<img src="/api/v1/uploads/')
+    assert "<figure" not in result
+
+
+def test_generated_ptrac_contains_report_media_summary():
+    parser = CSVParser()
+    parser.doc_version = "2.0.0"
+    parser.report_media = {"abc.png": {"data": "ZmFrZQ=="}}
+    client_sid = "client-1"
+    report_sid = "report-1"
+    parser.clients = {
+        client_sid: {
+            "sid": client_sid,
+            "name": "Client",
+            "tags": [],
+            "custom_field": [],
+            "description": "",
+            "assets": [],
+            "reports": [report_sid],
+        }
+    }
+    parser.reports = {
+        report_sid: {
+            "sid": report_sid,
+            "client_sid": client_sid,
+            "name": "Report",
+            "status": "Published",
+            "tags": [],
+            "custom_field": [],
+            "start_date": None,
+            "end_date": None,
+            "exec_summary": {"custom_fields": []},
+            "findings": [],
+        }
+    }
+
+    ptracs = parser.generate_ptrac_json_data()
+
+    assert "ReportMedia" in ptracs[0]["summary"]
+    assert ptracs[0]["summary"]["ReportMedia"] == {"abc.png": {"data": "ZmFrZQ=="}}

@@ -22,6 +22,20 @@ def set_interactive_mode(interactive: bool):
     global _interactive_mode
     _interactive_mode = bool(interactive)
 
+def is_interactive_mode(override: Optional[bool] = None) -> bool:
+    """
+    Returns whether interactive mode is enabled, honoring a per-call override.
+
+    Lets callers (such as main.py) make decisions about ambiguous input without
+    duplicating the module-level interactive state.
+
+    :param override: Override parameter to force a specific mode for this call
+    :type override: bool, optional
+    :return: True if interactive prompts are allowed
+    :rtype: bool
+    """
+    return override if override is not None else _interactive_mode
+
 def _check_interactive_mode(error_msg: str, override: Optional[bool] = None):
     """
     Checks if interactive mode is enabled. If not, logs critical error and exits.
@@ -31,8 +45,7 @@ def _check_interactive_mode(error_msg: str, override: Optional[bool] = None):
     :param override: Override parameter to force a specific mode for this call
     :type override: bool, optional
     """
-    interactive_mode = override if override is not None else _interactive_mode
-    if not interactive_mode:
+    if not is_interactive_mode(override):
         log.critical(error_msg)
         sys.exit(1)
 
