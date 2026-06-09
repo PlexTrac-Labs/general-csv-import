@@ -4,7 +4,7 @@ Dradis project exports are delivered as a CSV plus a same-basename ZIP file.
 The ZIP contains ``dradis-repository.xml`` (project nodes, issues, content
 blocks, and report properties) along with the attachment images referenced in
 rich text. This module centralizes the generic loading and normalization of
-that data so individual ``dradis_*`` mapping types can focus on field choices
+that data so individual Dradis mapping types can focus on field choices
 rather than on parsing.
 
 None of the logic here is customer specific. Mapping-specific field selection
@@ -34,11 +34,9 @@ DRADIS_REPOSITORY_XML_NAME = "dradis-repository.xml"
 NON_ASSET_NODE_LABELS = {
     "report content",
     "uploaded files",
-    "legacytable",
     "deleted files",
     "threatmodel",
 }
-
 
 @dataclass
 class LoadedDradisData:
@@ -84,6 +82,30 @@ def find_dradis_csv_candidates(folder_path: str) -> List[str]:
             candidates.append(csv_path)
         else:
             log.warning(f"Skipping '{csv_path}' - no same-basename ZIP file found beside it.")
+    return candidates
+
+
+def zip_contains_dradis_xml(zip_file_path: str) -> bool:
+    """Return whether the ZIP contains a ``dradis-repository.xml`` entry."""
+    try:
+        with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
+            return any(
+                name == DRADIS_REPOSITORY_XML_NAME
+                or name.endswith(f"/{DRADIS_REPOSITORY_XML_NAME}")
+                for name in zip_ref.namelist()
+            )
+    except (zipfile.BadZipFile, OSError):
+        return False
+
+
+def find_dradis_zip_candidates(folder_path: str) -> List[str]:
+    """Return sorted Dradis ZIP exports containing ``dradis-repository.xml``."""
+    candidates = []
+    for zip_path in sorted(glob.glob(os.path.join(folder_path, "*.zip"))):
+        if zip_contains_dradis_xml(zip_path):
+            candidates.append(zip_path)
+        else:
+            log.warning(f"Skipping '{zip_path}' - no {DRADIS_REPOSITORY_XML_NAME} inside it.")
     return candidates
 # endregion ---
 
@@ -133,6 +155,52 @@ def load_xml_from_zip(zip_file_path: str) -> Dict[str, Any]:
     return xmltodict.parse(xml_bytes) or {}
 
 
+def _build_dradis_graph_from_zip(zip_file_path: str) -> Dict[str, Any]:
+    """Parse a Dradis ZIP/XML export into the normalized object graph."""
+    xml = load_xml_from_zip(zip_file_path)
+    root = _xml_root(xml)
+    nodes = normalize_nodes(root)
+    return {
+        "xml": xml,
+        "nodes": nodes,
+        "issues": normalize_issues(root),
+        "content_blocks": normalize_content_blocks(root),
+        "report_properties": _extract_report_properties(root, nodes),
+    }
+
+
+def load_dradis_zip(zip_file_path: str) -> LoadedDradisData:
+    """Load a ZIP/XML-only Dradis export; no CSV data is read."""
+    if not os.path.exists(zip_file_path):
+        raise FileNotFoundError(f"Missing Dradis ZIP: '{zip_file_path}'")
+
+    graph = _build_dradis_graph_from_zip(zip_file_path)
+    return LoadedDradisData(
+        file_path=zip_file_path,
+        zip_file_path=zip_file_path,
+        xml=graph["xml"],
+        nodes=graph["nodes"],
+        issues=graph["issues"],
+        content_blocks=graph["content_blocks"],
+        report_properties=graph["report_properties"],
+    )
+
+
+def load_dradis_csv(csv_file_path: str) -> LoadedDradisData:
+    """Load a Dradis CSV-only export; no ZIP/XML data is read."""
+    if not os.path.exists(csv_file_path):
+        raise FileNotFoundError(f"Missing Dradis CSV: '{csv_file_path}'")
+
+    csv_rows, headers, row_dicts = load_csv_rows(csv_file_path)
+    return LoadedDradisData(
+        file_path=csv_file_path,
+        zip_file_path="",
+        csv_rows=csv_rows,
+        headers=headers,
+        row_dicts=row_dicts,
+    )
+
+
 def load_dradis_pair(csv_file_path: str) -> LoadedDradisData:
     """Load a Dradis CSV plus its paired ZIP/XML into a ``LoadedDradisData``."""
     zip_file_path = find_paired_zip(csv_file_path)
@@ -142,13 +210,7 @@ def load_dradis_pair(csv_file_path: str) -> LoadedDradisData:
         )
 
     csv_rows, headers, row_dicts = load_csv_rows(csv_file_path)
-    xml = load_xml_from_zip(zip_file_path)
-    root = _xml_root(xml)
-
-    nodes = normalize_nodes(root)
-    issues = normalize_issues(root)
-    content_blocks = normalize_content_blocks(root)
-    report_properties = _extract_report_properties(root, nodes)
+    graph = _build_dradis_graph_from_zip(zip_file_path)
 
     return LoadedDradisData(
         file_path=csv_file_path,
@@ -156,11 +218,11 @@ def load_dradis_pair(csv_file_path: str) -> LoadedDradisData:
         csv_rows=csv_rows,
         headers=headers,
         row_dicts=row_dicts,
-        xml=xml,
-        nodes=nodes,
-        issues=issues,
-        content_blocks=content_blocks,
-        report_properties=report_properties,
+        xml=graph["xml"],
+        nodes=graph["nodes"],
+        issues=graph["issues"],
+        content_blocks=graph["content_blocks"],
+        report_properties=graph["report_properties"],
     )
 # endregion ---
 
@@ -487,6 +549,74 @@ def get_dradis_target_node_label(nodes: List[Dict[str, Any]]) -> str:
         if label and label.lower() not in NON_ASSET_NODE_LABELS:
             return label
     return ""
+
+
+def get_report_node_properties(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return properties from the node carrying ``dradis.*`` keys, else first node."""
+    for node in nodes:
+        props = node.get("properties", {})
+        if isinstance(props, dict) and any(str(key).startswith("dradis.") for key in props):
+            return props
+    if nodes:
+        props = nodes[0].get("properties", {})
+        return props if isinstance(props, dict) else {}
+    return {}
+
+
+def get_issue_by_id(issues: List[Dict[str, Any]], issue_id: Any) -> Optional[Dict[str, Any]]:
+    """Return the normalized issue whose id matches ``issue_id``."""
+    target = str(issue_id).strip()
+    if not target:
+        return None
+    for issue in issues:
+        if str(issue.get("id", "")).strip() == target:
+            return issue
+    return None
+
+
+def get_dradis_evidence(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Flatten node evidence records into node/asset -> issue/finding pairings."""
+    records = []
+    for node in nodes:
+        raw = node.get("raw", {})
+        container = raw.get("evidence") if isinstance(raw, dict) else None
+        raw_evidence = ensure_list(container.get("evidence")) if isinstance(container, dict) else ensure_list(container)
+        for evidence in raw_evidence:
+            if not isinstance(evidence, dict):
+                continue
+            content = _text(_first_present(evidence, ["content"]))
+            records.append({
+                "node_id": node.get("id", ""),
+                "node_label": node.get("label", ""),
+                "node_properties": node.get("properties", {}),
+                "issue_id": _text(_first_present(evidence, ["issue-id", "issue_id"])).strip(),
+                "evidence_id": _text(_first_present(evidence, ["id"])).strip(),
+                "content": content,
+                "sections": parse_dradis_sections(content),
+            })
+    return records
+
+
+def clean_dradis_node_label(label: Any) -> str:
+    """Normalize a Dradis node label for use as a PlexTrac asset name."""
+    text = str(label).strip() if label is not None else ""
+    if not text:
+        return ""
+    match = re.match(r"^\\url\{(.*)\}$", text)
+    if match:
+        text = match.group(1).strip()
+    for escaped, replacement in (("\\_", "_"), ("\\{", "{"), ("\\}", "}"), ("\\&", "&")):
+        text = text.replace(escaped, replacement)
+    return text.strip()
+
+
+def strip_textile_link_url(value: Any) -> str:
+    """Reduce a Textile link to the bare URL, otherwise return the trimmed value."""
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        return ""
+    match = re.match(r'^"[^"]*":(\S+)', text)
+    return match.group(1).strip() if match else text
 # endregion ---
 
 

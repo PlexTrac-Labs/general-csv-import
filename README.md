@@ -3,7 +3,7 @@
 Template project for building customer-specific import scripts that transform
 source data into PlexTrac PTRAC files. It is cloned for each specific customer
 project. It supports plain CSV, JSON, customer header-mapped CSV, and Dradis
-CSV + ZIP/XML exports, and can process either a single file or a whole folder.
+CSV+ZIP or ZIP/XML exports, and can process either a single file or a whole folder.
 
 ## Requirements
 - Python 3.11
@@ -33,7 +33,12 @@ pipenv run python main.py --type example_csv --data-folder-path testing_files/cs
 
 Generate PTRAC files from a Dradis CSV export (a same-basename `.zip` must sit beside the CSV):
 ```bash
-pipenv run python main.py --type dradis_example --data-file-path "input_files/Project5651.csv" --api-version 2.19.0
+pipenv run python main.py --type example_dradis_csv --data-file-path "input_files/Project5651.csv" --api-version 2.19.0
+```
+
+Generate PTRAC files from a Dradis ZIP/XML export without reading a CSV:
+```bash
+pipenv run python main.py --type example_dradis_zip --data-file-path "input_files/Project5651.zip" --api-version 2.19.0
 ```
 
 Optionally import generated PTRACs into PlexTrac:
@@ -46,23 +51,27 @@ Generate PTRACs first, then optionally upload those PTRACs.
 
 ## Input Modes
 - `--data-file-path`: process a single input file.
-- `--data-folder-path`: process every matching file in a folder. JSON mappings
-  look for `*.json`, Dradis mappings look for CSV files with a same-basename ZIP
-  pair, and other mappings look for `*.csv`.
+- `--data-folder-path`: process every matching file in a folder. Each mapping
+  spec declares its own discovery behavior: JSON mappings look for `*.json`,
+  `example_dradis_csv` looks for CSV files with a same-basename ZIP pair,
+  `example_dradis_zip` looks for ZIP exports containing `dradis-repository.xml`,
+  and other mappings look for `*.csv`.
 
 Only one of `--data-file-path` or `--data-folder-path` should be provided. When
 both are set, interactive runs prompt for the mode and non-interactive runs fall
 back to file mode.
 
 ## Dradis Mappings
-Dradis exports are a CSV plus a same-basename ZIP containing
-`dradis-repository.xml` and attachment images. `dradis_example` is a generic
-scaffold mapping showing how to assemble a Dradis mapping. Build real
-customer mappings as independent `dradis_<name>` types modeled on it.
+Dradis exports can be handled in two generic example patterns:
+`example_dradis_csv` is CSV-driven and loads a same-basename ZIP for XML/image
+enrichment, while `example_dradis_zip` is graph-driven and reads findings,
+assets, affected-asset locations, and ports from `dradis-repository.xml`
+without reading a CSV. Build real customer mappings as independent types
+modeled on the appropriate example.
 
-When a Dradis mapping is selected, the parser converts Dradis/Textile rich text
-to HTML, resolves embedded Dradis image markers out of the paired ZIP, and adds
-those images to `summary.ReportMedia` in each generated PTRAC.
+When a Dradis example mapping is selected, the parser converts Dradis/Textile
+rich text to HTML, resolves embedded Dradis image markers out of the ZIP, and
+adds those images to `summary.ReportMedia` in each generated PTRAC.
 
 ## Report Template / Finding Layout
 Use `--report-template-name` and `--findings-layout-name` to resolve PlexTrac
@@ -84,12 +93,12 @@ generated PTRACs. If lookup fails, generation stops unless
 3. Add a verify function for required source data.
 4. Add a temp-CSV builder that outputs headers from `parser.get_csv_headers()` and one row per finding.
 5. Add a `MapType` value.
-6. Add a `_MapSpec` entry.
+6. Add a `_MapSpec` entry with the mapping's folder discovery function, rich-text flag, and any default merge strategy.
 7. Update `resolve()` to return the new spec.
 8. Add focused tests in `tests/`.
 
 ## Important Flags
-- `--type`: parser mapping type from `mappings.MapType` (`example_csv`, `example_json`, `header_mapping`, `dradis_example`).
+- `--type`: parser mapping type from `mappings.MapType` (`example_csv`, `example_json`, `example_dradis_csv`, `example_dradis_zip`, `header_mapping`).
 - `--data-file-path` / `--data-folder-path`: single file or folder of inputs.
 - `--headers-file-path`: customer header mapping CSV for the `header_mapping` type.
 - `--api-version`: PlexTrac API version used in generated PTRAC metadata.

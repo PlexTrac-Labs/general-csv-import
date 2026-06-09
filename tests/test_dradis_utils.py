@@ -108,6 +108,25 @@ def test_find_dradis_csv_candidates_only_returns_csv_with_zip_pairs(tmp_path):
     assert candidates == [str(tmp_path / "Paired.csv")]
 
 
+def test_zip_contains_dradis_xml_accepts_nested_repository_xml(tmp_path):
+    zip_path = tmp_path / "Project.zip"
+    with zipfile.ZipFile(zip_path, "w") as zip_ref:
+        zip_ref.writestr("nested/dradis-repository.xml", SAMPLE_XML)
+
+    assert dradis.zip_contains_dradis_xml(str(zip_path)) is True
+    assert dradis.zip_contains_dradis_xml(str(tmp_path / "missing.zip")) is False
+
+
+def test_find_dradis_zip_candidates_only_returns_dradis_exports(tmp_path):
+    with zipfile.ZipFile(tmp_path / "Project.zip", "w") as zip_ref:
+        zip_ref.writestr("dradis-repository.xml", SAMPLE_XML)
+    with zipfile.ZipFile(tmp_path / "Other.zip", "w") as zip_ref:
+        zip_ref.writestr("other.xml", "<x/>")
+    (tmp_path / "Broken.zip").write_text("not a zip", encoding="utf-8")
+
+    assert dradis.find_dradis_zip_candidates(str(tmp_path)) == [str(tmp_path / "Project.zip")]
+
+
 def test_load_dradis_pair_normalizes_properties_issues_and_content_blocks(tmp_path):
     csv_path, _ = _write_pair(
         tmp_path, "Report",
@@ -125,6 +144,35 @@ def test_load_dradis_pair_normalizes_properties_issues_and_content_blocks(tmp_pa
     assert loaded.issues[0]["sections"]["rating"] == "High"
     assert loaded.content_blocks[0]["group"] == "Introduction"
     assert loaded.content_blocks[0]["sections"]["description"] == "This is the introduction."
+
+
+def test_load_dradis_zip_reads_graph_without_csv(tmp_path):
+    zip_path = tmp_path / "Report.zip"
+    with zipfile.ZipFile(zip_path, "w") as zip_ref:
+        zip_ref.writestr("dradis-repository.xml", SAMPLE_XML)
+
+    loaded = dradis.load_dradis_zip(str(zip_path))
+
+    assert loaded.file_path == str(zip_path)
+    assert loaded.zip_file_path == str(zip_path)
+    assert loaded.headers == []
+    assert loaded.row_dicts == []
+    assert loaded.issues[0]["title"] == "SQL Injection"
+    assert loaded.report_properties["report_title"] == "Example Report"
+
+
+def test_load_dradis_csv_reads_csv_without_graph(tmp_path):
+    csv_path = tmp_path / "Report.csv"
+    csv_path.write_text("Title,Severity\nFinding One,High\n", encoding="utf-8")
+
+    loaded = dradis.load_dradis_csv(str(csv_path))
+
+    assert loaded.file_path == str(csv_path)
+    assert loaded.zip_file_path == ""
+    assert loaded.headers == ["Title", "Severity"]
+    assert loaded.row_dicts == [{"Title": "Finding One", "Severity": "High"}]
+    assert loaded.nodes == []
+    assert loaded.issues == []
 
 
 def test_load_dradis_pair_handles_empty_containers_as_empty_lists(tmp_path):
@@ -200,3 +248,42 @@ def test_normalize_severity_and_status():
     assert dradis.normalize_dradis_status("in progress") == "In Process"
     assert dradis.normalize_dradis_status("closed") == "Closed"
     assert dradis.normalize_dradis_status("new") == "Open"
+
+
+def test_graph_helpers_extract_report_properties_issue_and_evidence():
+    nodes = [
+        {
+            "id": "1",
+            "label": "https://target.test",
+            "properties": {"environment": "prod"},
+            "raw": {
+                "evidence": {
+                    "evidence": {
+                        "id": "100",
+                        "issue-id": "10",
+                        "content": "#[Vulnerable Target: IPorUrl]#\n\"$\":https://target.test/login\n\n#[Port]#\n443\n\n#[Protocol]#\ntcp",
+                    }
+                }
+            },
+        },
+        {"id": "2", "label": "Report content", "properties": {"dradis.clientshort": "Acme"}, "raw": {}},
+    ]
+    issues = [{"id": "10", "sections": {"title": "Finding"}}]
+
+    assert dradis.get_report_node_properties(nodes) == {"dradis.clientshort": "Acme"}
+    assert dradis.get_issue_by_id(issues, 10) == issues[0]
+    assert dradis.get_issue_by_id(issues, "missing") is None
+
+    records = dradis.get_dradis_evidence(nodes)
+    assert len(records) == 1
+    assert records[0]["node_label"] == "https://target.test"
+    assert records[0]["issue_id"] == "10"
+    assert records[0]["sections"]["vulnerable_target:_iporurl"] == '"$":https://target.test/login'
+    assert records[0]["sections"]["port"] == "443"
+
+
+def test_label_and_textile_link_cleanup_helpers():
+    assert dradis.clean_dradis_node_label("\\url{https://example.com/a_b}") == "https://example.com/a_b"
+    assert dradis.clean_dradis_node_label("host\\_name\\&x") == "host_name&x"
+    assert dradis.strip_textile_link_url('"$":https://example.com/path') == "https://example.com/path"
+    assert dradis.strip_textile_link_url("https://example.com/plain") == "https://example.com/plain"

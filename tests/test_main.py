@@ -4,6 +4,7 @@ import zipfile
 import pytest
 
 import main
+import mappings
 import utils.input_utils as input_utils
 
 
@@ -121,16 +122,24 @@ def test_get_input_file_paths_folder_modes(tmp_path):
     (tmp_path / "b.csv").write_text("x")
     (tmp_path / "a.csv").write_text("x")
     args = argparse.Namespace(data_file_path="", data_folder_path=str(tmp_path))
-    assert main.get_input_file_paths(args, "example_csv") == [str(tmp_path / "a.csv"), str(tmp_path / "b.csv")]
+    assert main.get_input_file_paths(args, mappings.resolve("example_csv")) == [str(tmp_path / "a.csv"), str(tmp_path / "b.csv")]
 
     # json folder
     (tmp_path / "c.json").write_text("{}")
-    assert main.get_input_file_paths(args, "example_json") == [str(tmp_path / "c.json")]
+    assert main.get_input_file_paths(args, mappings.resolve("example_json")) == [str(tmp_path / "c.json")]
 
-    # dradis folder only returns csv with paired zip
+    # CSV-driven Dradis folder mode only returns CSV files with paired ZIPs.
     with zipfile.ZipFile(tmp_path / "a.zip", "w") as zip_ref:
         zip_ref.writestr("dradis-repository.xml", "<x/>")
-    assert main.get_input_file_paths(args, "dradis_example") == [str(tmp_path / "a.csv")]
+    assert main.get_input_file_paths(args, mappings.resolve("example_dradis_csv")) == [str(tmp_path / "a.csv")]
+
+    # ZIP-driven Dradis folder mode returns Dradis ZIP exports.
+    with zipfile.ZipFile(tmp_path / "dradis.zip", "w") as zip_ref:
+        zip_ref.writestr("dradis-repository.xml", "<x/>")
+    assert main.get_input_file_paths(args, mappings.resolve("example_dradis_zip")) == [
+        str(tmp_path / "a.zip"),
+        str(tmp_path / "dradis.zip"),
+    ]
 
 
 def test_run_processes_each_folder_input_and_saves_ptracs(tmp_path, monkeypatch):

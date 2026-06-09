@@ -1,7 +1,6 @@
 from typing import List, Optional
 import argparse
 import csv
-import glob
 import io
 import json
 import os
@@ -204,13 +203,11 @@ def determine_input_mode(args: argparse.Namespace) -> Optional[str]:
     return None
 
 
-def get_input_file_paths(args: argparse.Namespace, map_type: str) -> List[str]:
+def get_input_file_paths(args: argparse.Namespace, spec) -> List[str]:
     """
     Resolve the list of input files to process for the chosen input mode.
 
-    Folder mode is mapping-aware: ``example_json`` looks for ``*.json``, Dradis
-    mappings look for CSV files that have a same-basename ZIP pair, and other
-    mappings look for ``*.csv``.
+    Folder-mode discovery is declared by each mapping spec.
     """
     input_mode = determine_input_mode(args)
 
@@ -220,13 +217,7 @@ def get_input_file_paths(args: argparse.Namespace, map_type: str) -> List[str]:
     if input_mode != "folder":
         return []
 
-    if map_type == mappings.MapType.EXAMPLE_JSON.value:
-        return sorted(glob.glob(os.path.join(args.data_folder_path, "*.json")))
-    if map_type.startswith("dradis_"):
-        import mapping_utils.dradis_utils as dradis
-        return dradis.find_dradis_csv_candidates(args.data_folder_path)
-
-    return sorted(glob.glob(os.path.join(args.data_folder_path, "*.csv")))
+    return spec.find_input_files_function(args.data_folder_path)
 
 
 def get_template_doc_id(items: list, requested_name: str, display_name: str, error_name: str) -> str:
@@ -306,7 +297,7 @@ def process_input_file(data_file_path: str, map_type: str, spec, args: argparse.
     Process a single input file end-to-end and return its generated PTRAC data.
     """
     parser = CSVParser(header_mapping=spec.mapping)
-    parser.enable_rich_text_processing = map_type.startswith("dradis_")
+    parser.enable_rich_text_processing = getattr(spec, "enable_rich_text_processing", False)
     handle_load_api_version(args.api_version, parser)
 
     # need to generate mapping from header file after spec is resolved and parser created for easier access to parser mapping keys
@@ -327,8 +318,13 @@ def process_input_file(data_file_path: str, map_type: str, spec, args: argparse.
     load_parser_mappings_from_data_file(temp_csv, parser)
     load_data_into_parser(temp_csv, parser)
 
-    if args.finding_merge_strategy != "none":
-        parser.set_finding_merge_strategy(args.finding_merge_strategy)
+    finding_merge_strategy = (
+        args.finding_merge_strategy
+        if args.finding_merge_strategy != "none"
+        else getattr(spec, "default_finding_merge_strategy", None)
+    )
+    if finding_merge_strategy:
+        parser.set_finding_merge_strategy(finding_merge_strategy)
 
     if not parser.parse_data():
         raise RuntimeError(f"Parser failed for file: {data_file_path}")
@@ -344,7 +340,7 @@ def run(args: argparse.Namespace):
         exit(1)
 
     spec = mappings.resolve(map_type)
-    input_file_paths = get_input_file_paths(args, map_type)
+    input_file_paths = get_input_file_paths(args, spec)
     if not input_file_paths:
         log.critical("No input files found. Use --data-file-path or --data-folder-path.")
         exit(1)

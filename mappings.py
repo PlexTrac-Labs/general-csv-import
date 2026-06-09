@@ -1,4 +1,4 @@
-
+import glob
 import os
 from enum import Enum
 from typing import List, Dict, Any, Union, Optional
@@ -144,7 +144,7 @@ example_json_template_mapping = {
 # Report narratives and custom fields share a mapping_key but use unique headers
 # (the header becomes the PlexTrac label). Appendix/observation/exec-summary
 # narratives are added dynamically while building the temp CSV.
-dradis_example_template_mapping = {
+example_dradis_csv_template_mapping = {
     # client / report
     "client_name": {"header": "client_name", "mapping_key": "client_name", "col_index": None},
     "report_name": {"header": "report_name", "mapping_key": "report_name", "col_index": None},
@@ -172,6 +172,38 @@ dradis_example_template_mapping = {
     "cwe": {"header": "cwe", "mapping_key": "finding_cwe", "col_index": None},
     "asset_name": {"header": "asset_name", "mapping_key": "asset_name", "col_index": None},
     "Evidence": {"header": "Evidence", "mapping_key": "affected_asset_evidence", "col_index": None},
+    "tags": {"header": "tags", "mapping_key": "finding_multi_tag", "col_index": None},
+}
+
+example_dradis_zip_template_mapping = {
+    "client_name": {"header": "client_name", "mapping_key": "client_name", "col_index": None},
+    "report_name": {"header": "report_name", "mapping_key": "report_name", "col_index": None},
+    "report_tags": {"header": "report_tags", "mapping_key": "report_multi_tag", "col_index": None},
+    "Introduction": {"header": "Introduction", "mapping_key": "report_narrative", "col_index": None},
+    "Executive Summary": {"header": "Executive Summary", "mapping_key": "report_narrative", "col_index": None},
+    "title": {"header": "title", "mapping_key": "finding_title", "col_index": None},
+    "severity": {"header": "severity", "mapping_key": "finding_severity", "col_index": None},
+    "status": {"header": "status", "mapping_key": "finding_status", "col_index": None},
+    "description": {"header": "description", "mapping_key": "finding_description", "col_index": None},
+    "recommendations": {"header": "recommendations", "mapping_key": "finding_recommendations", "col_index": None},
+    "references": {"header": "references", "mapping_key": "finding_references", "col_index": None},
+    "cvss_vector": {"header": "cvss_vector", "mapping_key": "finding_cvss3_1_vector", "col_index": None},
+    "asset_name": {"header": "asset_name", "mapping_key": "asset_name", "col_index": None},
+    "affected_asset_location_url": {
+        "header": "affected_asset_location_url",
+        "mapping_key": "affected_asset_location_url",
+        "col_index": None,
+    },
+    "affected_asset_port_number": {
+        "header": "affected_asset_port_number",
+        "mapping_key": "affected_asset_port_number",
+        "col_index": None,
+    },
+    "affected_asset_port_protocol": {
+        "header": "affected_asset_port_protocol",
+        "mapping_key": "affected_asset_port_protocol",
+        "col_index": None,
+    },
     "tags": {"header": "tags", "mapping_key": "finding_multi_tag", "col_index": None},
 }
 
@@ -204,7 +236,7 @@ def load_data_file_general_json(data_file_path:str = "") -> LoadedJSONData:
     """
     return input.load_json_data("Enter file path to custom scan JSON file to import", json_file_path=data_file_path)
 
-def load_data_file_dradis_example(data_file_path: str = "") -> LoadedDradisData:
+def load_data_file_example_dradis_csv(data_file_path: str = "") -> LoadedDradisData:
     """
     Loads a Dradis CSV export and its same-basename ZIP file (containing
     ``dradis-repository.xml``) into a normalized ``LoadedDradisData`` structure.
@@ -217,6 +249,13 @@ def load_data_file_dradis_example(data_file_path: str = "") -> LoadedDradisData:
     if not data_file_path:
         data_file_path = input.prompt_user("Enter file path to Dradis CSV export to import")
     return dradis.load_dradis_pair(data_file_path)
+
+
+def load_data_file_example_dradis_zip(data_file_path: str = "") -> LoadedDradisData:
+    """Load a ZIP/XML-only Dradis export for the graph-driven example mapping."""
+    if not data_file_path:
+        data_file_path = input.prompt_user("Enter file path to Dradis ZIP export to import")
+    return dradis.load_dradis_zip(data_file_path)
 
 # endregion ---
 
@@ -306,32 +345,46 @@ def verify_example_json_payload(loaded_file_data:LoadedJSONData) -> bool:
     
     return True
 
-def verify_dradis_example_payload(loaded_file_data: LoadedDradisData) -> bool:
+def verify_example_dradis_csv_payload(loaded_file_data: LoadedDradisData) -> bool:
     """
     Checks that the loaded Dradis data is valid for the scaffold mapping.
 
     Requires CSV headers, at least one data row, at least one XML node, and at
     least one content block.
 
-    :param loaded_file_data: object returned from `load_data_file_dradis_example`
+    :param loaded_file_data: object returned from `load_data_file_example_dradis_csv`
     :type loaded_file_data: LoadedDradisData
     :return: whether the data is valid
     :rtype: bool
     """
     if not isinstance(loaded_file_data, LoadedDradisData):
-        log.critical("verify_dradis_example_payload: loaded data is not LoadedDradisData")
+        log.critical("verify_example_dradis_csv_payload: loaded data is not LoadedDradisData")
         return False
     if not loaded_file_data.headers:
-        log.critical("verify_dradis_example_payload: CSV has no headers")
+        log.critical("verify_example_dradis_csv_payload: CSV has no headers")
         return False
     if not loaded_file_data.row_dicts:
-        log.critical("verify_dradis_example_payload: CSV has no data rows")
+        log.critical("verify_example_dradis_csv_payload: CSV has no data rows")
         return False
     if not loaded_file_data.nodes:
-        log.critical("verify_dradis_example_payload: dradis-repository.xml has no nodes")
+        log.critical("verify_example_dradis_csv_payload: dradis-repository.xml has no nodes")
         return False
     if not loaded_file_data.content_blocks:
-        log.critical("verify_dradis_example_payload: dradis-repository.xml has no content blocks")
+        log.critical("verify_example_dradis_csv_payload: dradis-repository.xml has no content blocks")
+        return False
+    return True
+
+
+def verify_example_dradis_zip_payload(loaded_file_data: LoadedDradisData) -> bool:
+    """Validate the ZIP/XML object graph required by the graph-driven example."""
+    if not isinstance(loaded_file_data, LoadedDradisData):
+        log.critical("verify_example_dradis_zip_payload: loaded data is not LoadedDradisData")
+        return False
+    if not loaded_file_data.nodes:
+        log.critical("verify_example_dradis_zip_payload: missing Dradis nodes")
+        return False
+    if not loaded_file_data.issues:
+        log.critical("verify_example_dradis_zip_payload: missing Dradis issues")
         return False
     return True
 
@@ -564,7 +617,7 @@ def _add_dynamic_narrative_headers(parser: CSVParser, narratives: List[tuple]) -
                 "col_index": None,
             }
 
-def create_temp_data_csv_dradis_example(loaded_file_data: LoadedDradisData, parser: CSVParser) -> List[list]:
+def create_temp_data_csv_example_dradis_csv(loaded_file_data: LoadedDradisData, parser: CSVParser) -> List[list]:
     """
     Converts a Dradis CSV + ZIP/XML export into a temporary CSV the generic
     parser already understands.
@@ -642,7 +695,7 @@ def create_temp_data_csv_dradis_example(loaded_file_data: LoadedDradisData, pars
         set_field(temp_csv_headers, new_row, "report_name", report_name)
         set_field(temp_csv_headers, new_row, "report_date", report_date)
         set_field(temp_csv_headers, new_row, "Report Version", report_version)
-        set_field(temp_csv_headers, new_row, "report_tags", "dradis_example")
+        set_field(temp_csv_headers, new_row, "report_tags", "example_dradis_csv")
         for label, text in static_narratives.items():
             set_field(temp_csv_headers, new_row, label, text)
         for label, text in dynamic_narratives:
@@ -692,7 +745,7 @@ def create_temp_data_csv_dradis_example(loaded_file_data: LoadedDradisData, pars
         set_field(temp_csv_headers, new_row, "cwe", cwe)
         set_field(temp_csv_headers, new_row, "asset_name", asset_name)
         set_field(temp_csv_headers, new_row, "Evidence", evidence)
-        set_field(temp_csv_headers, new_row, "tags", "dradis_example")
+        set_field(temp_csv_headers, new_row, "tags", "example_dradis_csv")
 
         # CVSS: keep the vector and compute the overall base score when valid
         if cvss_vector:
@@ -704,6 +757,102 @@ def create_temp_data_csv_dradis_example(loaded_file_data: LoadedDradisData, pars
                 except Exception as e:
                     log.warning(f"Could not calculate CVSS base score for '{cvss_vector}'. {e}")
 
+        temp_csv.append(new_row)
+
+    return temp_csv
+
+
+def create_temp_data_csv_example_dradis_zip(loaded_file_data: LoadedDradisData, parser: CSVParser) -> List[list]:
+    """
+    Convert a Dradis ZIP/XML object graph into the parser's temporary CSV shape.
+
+    The unit of import is an evidence record. Each evidence row links one issue to
+    one asset; issues without evidence still emit a finding row.
+    """
+    parser.zip_file_path = loaded_file_data.zip_file_path
+
+    temp_csv_headers = parser.get_csv_headers()
+    temp_csv: List[List[str]] = [temp_csv_headers]
+    properties = dradis.get_report_node_properties(loaded_file_data.nodes)
+
+    client_name = dradis.get_property(
+        properties,
+        ["dradis.clientformal", "dradis.client", "dradis.clientshort"],
+        "Dradis Client",
+    )
+    report_name = dradis.get_property(
+        properties,
+        ["dradis.application", "dradis.project", "dradis.appname"],
+        "Dradis Report",
+    )
+    narratives = {
+        "Introduction": dradis.content_block_text(loaded_file_data.content_blocks, "Introduction"),
+        "Executive Summary": dradis.content_block_text(
+            loaded_file_data.content_blocks,
+            ["ExecutiveSummary", "ExecSummary", "Executive Summary"],
+        ),
+    }
+
+    def seed_common_fields(new_row: List[str]) -> None:
+        set_field(temp_csv_headers, new_row, "client_name", client_name)
+        set_field(temp_csv_headers, new_row, "report_name", report_name)
+        set_field(temp_csv_headers, new_row, "report_tags", "example_dradis_zip")
+        for narrative_header, narrative_value in narratives.items():
+            set_field(temp_csv_headers, new_row, narrative_header, narrative_value)
+
+    evidence_records = dradis.get_dradis_evidence(loaded_file_data.nodes)
+    issue_ids_with_evidence = {record["issue_id"] for record in evidence_records if record["issue_id"]}
+    rows_plan: List[tuple] = []
+    for record in evidence_records:
+        issue = dradis.get_issue_by_id(loaded_file_data.issues, record["issue_id"])
+        if issue is None:
+            log.warning(
+                f"example_dradis_zip evidence {record['evidence_id']} references unknown issue id "
+                f"'{record['issue_id']}'. Skipping evidence..."
+            )
+            continue
+        rows_plan.append((issue, record))
+
+    for issue in loaded_file_data.issues:
+        if str(issue.get("id", "")).strip() not in issue_ids_with_evidence:
+            rows_plan.append((issue, None))
+
+    for row_index, (issue, evidence) in enumerate(rows_plan):
+        issue_sections = issue.get("sections", {})
+        title = dradis.first_value(issue_sections.get("title", ""), issue.get("title", ""))
+        if not title:
+            log.error(f"example_dradis_zip row {row_index} has no finding title. Skipping...")
+            continue
+
+        new_row = ["" for _ in range(len(temp_csv_headers))]
+        seed_common_fields(new_row)
+
+        issue_state = ""
+        raw_issue = issue.get("raw", {})
+        if isinstance(raw_issue, dict):
+            issue_state = raw_issue.get("state", "")
+
+        set_field(temp_csv_headers, new_row, "title", title)
+        set_field(temp_csv_headers, new_row, "severity", dradis.normalize_dradis_severity(issue_sections.get("rating", "")))
+        set_field(temp_csv_headers, new_row, "status", dradis.normalize_dradis_status(issue_state))
+        set_field(temp_csv_headers, new_row, "description", issue_sections.get("details", ""))
+        set_field(temp_csv_headers, new_row, "recommendations", issue_sections.get("remediation", ""))
+        set_field(temp_csv_headers, new_row, "references", issue_sections.get("references", ""))
+        set_field(temp_csv_headers, new_row, "cvss_vector", issue_sections.get("cvssv3.vector", ""))
+
+        if evidence is not None:
+            evidence_sections = evidence.get("sections", {})
+            set_field(temp_csv_headers, new_row, "asset_name", dradis.clean_dradis_node_label(evidence.get("node_label", "")))
+            set_field(
+                temp_csv_headers,
+                new_row,
+                "affected_asset_location_url",
+                dradis.strip_textile_link_url(evidence_sections.get("vulnerable_target:_iporurl", "")),
+            )
+            set_field(temp_csv_headers, new_row, "affected_asset_port_number", evidence_sections.get("port", ""))
+            set_field(temp_csv_headers, new_row, "affected_asset_port_protocol", evidence_sections.get("protocol", ""))
+
+        set_field(temp_csv_headers, new_row, "tags", "example_dradis_zip")
         temp_csv.append(new_row)
 
     return temp_csv
@@ -728,27 +877,68 @@ def build_mapping_from_header_file(header_file: LoadedCSVData, parser: CSVParser
 # endregion ---
 
 
+# region input discovery functions -------------------------------------------
+def find_input_files_general_csv(folder_path: str) -> List[str]:
+    return sorted(glob.glob(os.path.join(folder_path, "*.csv")))
+
+
+def find_input_files_general_json(folder_path: str) -> List[str]:
+    return sorted(glob.glob(os.path.join(folder_path, "*.json")))
+
+
+def find_input_files_dradis_pair(folder_path: str) -> List[str]:
+    return dradis.find_dradis_csv_candidates(folder_path)
+
+
+def find_input_files_dradis_zip(folder_path: str) -> List[str]:
+    return dradis.find_dradis_zip_candidates(folder_path)
+# endregion ---
+
+
 # region ---- enum that bundles everything -------------------------------------------
 class MapType(str, Enum):
     EXAMPLE_CSV = "example_csv"
     EXAMPLE_JSON = "example_json"
+    EXAMPLE_DRADIS_CSV = "example_dradis_csv"
+    EXAMPLE_DRADIS_ZIP = "example_dradis_zip"
     HEADER_MAPPING = "header_mapping"
-    DRADIS_EXAMPLE = "dradis_example"
 
 class _MapSpec:
-    """Lightweight container to provide .mapping / .load_data_function / .verify_function / .temp_csv_function."""
-    __slots__ = ("mapping", "load_data_function", "verify_function", "temp_csv_function")
-    def __init__(self, mapping, load_data_function, verify_function, temp_csv_function):
+    """Lightweight container for a mapping's loading, validation, and run behavior."""
+    __slots__ = (
+        "mapping",
+        "load_data_function",
+        "verify_function",
+        "temp_csv_function",
+        "find_input_files_function",
+        "default_finding_merge_strategy",
+        "enable_rich_text_processing",
+    )
+
+    def __init__(
+        self,
+        mapping,
+        load_data_function,
+        verify_function,
+        temp_csv_function,
+        find_input_files_function,
+        default_finding_merge_strategy=None,
+        enable_rich_text_processing=False,
+    ):
         self.mapping = mapping
         self.load_data_function = load_data_function
         self.verify_function = verify_function
         self.temp_csv_function = temp_csv_function
+        self.find_input_files_function = find_input_files_function
+        self.default_finding_merge_strategy = default_finding_merge_strategy
+        self.enable_rich_text_processing = enable_rich_text_processing
 
 EXAMPLE_CSV = _MapSpec(
     mapping=example_csv_template_mapping,
     load_data_function=load_data_file_general_csv,
     verify_function=verify_example_csv_payload,
     temp_csv_function=create_temp_data_csv_example_csv,
+    find_input_files_function=find_input_files_general_csv,
 )
 
 EXAMPLE_JSON = _MapSpec(
@@ -756,6 +946,7 @@ EXAMPLE_JSON = _MapSpec(
     load_data_function=load_data_file_general_json,
     verify_function=verify_example_json_payload,
     temp_csv_function=create_temp_data_csv_example_json,
+    find_input_files_function=find_input_files_general_json,
 )
 
 HEADER_MAPPING = _MapSpec(
@@ -763,13 +954,26 @@ HEADER_MAPPING = _MapSpec(
     load_data_function=load_data_file_general_csv,
     verify_function=verify_header_mapping_payload,
     temp_csv_function=create_temp_data_csv_header_mapping,
+    find_input_files_function=find_input_files_general_csv,
 )
 
-DRADIS_EXAMPLE = _MapSpec(
-    mapping=dradis_example_template_mapping,
-    load_data_function=load_data_file_dradis_example,
-    verify_function=verify_dradis_example_payload,
-    temp_csv_function=create_temp_data_csv_dradis_example,
+EXAMPLE_DRADIS_CSV = _MapSpec(
+    mapping=example_dradis_csv_template_mapping,
+    load_data_function=load_data_file_example_dradis_csv,
+    verify_function=verify_example_dradis_csv_payload,
+    temp_csv_function=create_temp_data_csv_example_dradis_csv,
+    find_input_files_function=find_input_files_dradis_pair,
+    enable_rich_text_processing=True,
+)
+
+EXAMPLE_DRADIS_ZIP = _MapSpec(
+    mapping=example_dradis_zip_template_mapping,
+    load_data_function=load_data_file_example_dradis_zip,
+    verify_function=verify_example_dradis_zip_payload,
+    temp_csv_function=create_temp_data_csv_example_dradis_zip,
+    find_input_files_function=find_input_files_dradis_zip,
+    default_finding_merge_strategy="user_defined_fields",
+    enable_rich_text_processing=True,
 )
 
 def resolve(map_type_str: str) -> _MapSpec:
@@ -779,7 +983,9 @@ def resolve(map_type_str: str) -> _MapSpec:
         return EXAMPLE_JSON
     if map_type_str == MapType.HEADER_MAPPING.value:
         return HEADER_MAPPING
-    if map_type_str == MapType.DRADIS_EXAMPLE.value:
-        return DRADIS_EXAMPLE
+    if map_type_str == MapType.EXAMPLE_DRADIS_CSV.value:
+        return EXAMPLE_DRADIS_CSV
+    if map_type_str == MapType.EXAMPLE_DRADIS_ZIP.value:
+        return EXAMPLE_DRADIS_ZIP
     raise ValueError(f"Unknown mapping type: {map_type_str}")
 # endregion
