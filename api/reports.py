@@ -228,14 +228,14 @@ More information on [exporting a report](https://docs.plextrac.com/plextrac-docu
     path = f'/client/{clientId}/report/{reportId}/export/doc?includeEvidence={includeEvidence}?templateID={templateID}'
     return request.get(base_url, headers, root+path, name)
 
-def import_ptrac_report(base_url, headers, clientId, payload):
+def import_ptrac_report(base_url, headers, clientId, files):
     """
     No description in Postman
     """
     name = "Import Ptrac Report"
     root = "/api/v1"
     path = f'/client/{clientId}/report/import'
-    return request.post(base_url, headers, root+path, name, payload)
+    return request.post(base_url, headers, root+path, name, files=files)
 
 def import_findings(base_url, headers, clientId, reportId, source):
     """
