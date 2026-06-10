@@ -169,6 +169,8 @@ example_dradis_csv_template_mapping = {
     "references": {"header": "references", "mapping_key": "finding_references", "col_index": None},
     "cvss_vector": {"header": "cvss_vector", "mapping_key": "finding_cvss3_1_vector", "col_index": None},
     "cvss_overall": {"header": "cvss_overall", "mapping_key": "finding_cvss3_1_overall", "col_index": None},
+    "cvss4_vector": {"header": "cvss4_vector", "mapping_key": "finding_cvss4_vector", "col_index": None},
+    "cvss4_overall": {"header": "cvss4_overall", "mapping_key": "finding_cvss4_overall", "col_index": None},
     "cwe": {"header": "cwe", "mapping_key": "finding_cwe", "col_index": None},
     "asset_name": {"header": "asset_name", "mapping_key": "asset_name", "col_index": None},
     "Evidence": {"header": "Evidence", "mapping_key": "affected_asset_evidence", "col_index": None},
@@ -188,6 +190,9 @@ example_dradis_zip_template_mapping = {
     "recommendations": {"header": "recommendations", "mapping_key": "finding_recommendations", "col_index": None},
     "references": {"header": "references", "mapping_key": "finding_references", "col_index": None},
     "cvss_vector": {"header": "cvss_vector", "mapping_key": "finding_cvss3_1_vector", "col_index": None},
+    "cvss_overall": {"header": "cvss_overall", "mapping_key": "finding_cvss3_1_overall", "col_index": None},
+    "cvss4_vector": {"header": "cvss4_vector", "mapping_key": "finding_cvss4_vector", "col_index": None},
+    "cvss4_overall": {"header": "cvss4_overall", "mapping_key": "finding_cvss4_overall", "col_index": None},
     "asset_name": {"header": "asset_name", "mapping_key": "asset_name", "col_index": None},
     "affected_asset_location_url": {
         "header": "affected_asset_location_url",
@@ -747,15 +752,26 @@ def create_temp_data_csv_example_dradis_csv(loaded_file_data: LoadedDradisData, 
         set_field(temp_csv_headers, new_row, "Evidence", evidence)
         set_field(temp_csv_headers, new_row, "tags", "example_dradis_csv")
 
-        # CVSS: keep the vector and compute the overall base score when valid
+        # CVSS: normalise prefix, route to the right version-specific fields
         if cvss_vector:
-            set_field(temp_csv_headers, new_row, "cvss_vector", cvss_vector)
-            normalized_vector = cvss_vector[9:] if cvss_vector.startswith("CVSS:3.1/") else cvss_vector
-            if utils.is_valid_cvss3_1_vector(normalized_vector):
-                try:
-                    set_field(temp_csv_headers, new_row, "cvss_overall", utils.calculate_cvss3_base_score(cvss_vector))
-                except Exception as e:
-                    log.warning(f"Could not calculate CVSS base score for '{cvss_vector}'. {e}")
+            cvss_vector = utils.normalize_cvss_vector(cvss_vector)
+            cvss_version = utils.detect_cvss_version(cvss_vector)
+            if cvss_version == "4.0":
+                if utils.is_valid_cvss4_vector(cvss_vector):
+                    set_field(temp_csv_headers, new_row, "cvss4_vector", cvss_vector)
+                    score = utils.calculate_cvss_base_score(cvss_vector)
+                    if score is not None:
+                        set_field(temp_csv_headers, new_row, "cvss4_overall", score)
+                else:
+                    log.warning(f"Skipping invalid CVSS 4.0 vector '{cvss_vector}' on row {row_index}.")
+            else:
+                if utils.is_valid_cvss_vector(cvss_vector):
+                    set_field(temp_csv_headers, new_row, "cvss_vector", cvss_vector)
+                    score = utils.calculate_cvss_base_score(cvss_vector)
+                    if score is not None:
+                        set_field(temp_csv_headers, new_row, "cvss_overall", score)
+                else:
+                    log.warning(f"Skipping invalid CVSS vector '{cvss_vector}' on row {row_index}.")
 
         temp_csv.append(new_row)
 
@@ -838,7 +854,26 @@ def create_temp_data_csv_example_dradis_zip(loaded_file_data: LoadedDradisData, 
         set_field(temp_csv_headers, new_row, "description", issue_sections.get("details", ""))
         set_field(temp_csv_headers, new_row, "recommendations", issue_sections.get("remediation", ""))
         set_field(temp_csv_headers, new_row, "references", issue_sections.get("references", ""))
-        set_field(temp_csv_headers, new_row, "cvss_vector", issue_sections.get("cvssv3.vector", ""))
+        raw_vector = issue_sections.get("cvssv3.vector", "") or issue_sections.get("cvss_vector", "")
+        if raw_vector:
+            cvss_vector = utils.normalize_cvss_vector(raw_vector)
+            cvss_version = utils.detect_cvss_version(cvss_vector)
+            if cvss_version == "4.0":
+                if utils.is_valid_cvss4_vector(cvss_vector):
+                    set_field(temp_csv_headers, new_row, "cvss4_vector", cvss_vector)
+                    score = utils.calculate_cvss_base_score(cvss_vector)
+                    if score is not None:
+                        set_field(temp_csv_headers, new_row, "cvss4_overall", score)
+                else:
+                    log.warning(f"example_dradis_zip row {row_index} has invalid CVSS 4.0 vector '{raw_vector}'.")
+            else:
+                if utils.is_valid_cvss_vector(cvss_vector):
+                    set_field(temp_csv_headers, new_row, "cvss_vector", cvss_vector)
+                    score = utils.calculate_cvss_base_score(cvss_vector)
+                    if score is not None:
+                        set_field(temp_csv_headers, new_row, "cvss_overall", score)
+                else:
+                    log.warning(f"example_dradis_zip row {row_index} has invalid CVSS vector '{raw_vector}'.")
 
         if evidence is not None:
             evidence_sections = evidence.get("sections", {})

@@ -297,6 +297,26 @@ class CSVParser():
             'merge_override': None,
         },
         # cvss scores
+        'finding_cvss4_overall': {
+            'id': 'finding_cvss4_overall',
+            'object_type': 'FINDING',
+            'data_type' : 'DETAIL',
+            'validation_type': 'FLOAT', # validate
+            'input_blanks': False,
+            'path': ['risk_score', 'CVSS4', 'overall'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
+        },
+        'finding_cvss4_vector': {
+            'id': 'finding_cvss4_vector',
+            'object_type': 'FINDING',
+            'data_type' : 'DETAIL',
+            'validation_type': 'CVSS4_VECTOR', # validate
+            'input_blanks': False,
+            'path': ['risk_score', 'CVSS4', 'vector'],
+            'merge_type': 'SCALAR',
+            'merge_override': None,
+        },
         'finding_cvss3_1_overall': {
             'id': 'finding_cvss3_1_overall',
             'object_type': 'FINDING',
@@ -311,7 +331,7 @@ class CSVParser():
             'id': 'finding_cvss3_1_vector',
             'object_type': 'FINDING',
             'data_type' : 'DETAIL',
-            'validation_type': 'CVSS_VECTOR', # validate
+            'validation_type': 'CVSS3_VECTOR', # validate
             'input_blanks': False,
             'path': ['risk_score', 'CVSS3_1', 'vector'],
             'merge_type': 'SCALAR',
@@ -761,10 +781,10 @@ class CSVParser():
         'fields': {
             'scores': {
                 "cvss3": {
-                "type": "cvss3",
-                "calculation": "",
-                "value": "",
-                "label": ""
+                    "type": "cvss3",
+                    "calculation": "",
+                    "value": "",
+                    "label": ""
                 },
                 "cvss": {
                     "type": "cvss",
@@ -781,6 +801,10 @@ class CSVParser():
             }
         },
         'risk_score': {
+            'CVSS4': {
+                'overall': 0,
+                'vector': ""
+            },
             'CVSS3_1': {
                 'overall': 0,
                 'vector': ""
@@ -1569,13 +1593,34 @@ class CSVParser():
                 return None
             return value
 
-        if mapping['validation_type'] == "CVSS_VECTOR":
-            if value.startswith('CVSS:3.1/'):
-                value = value[9:]
-            if not utils.is_valid_cvss3_1_vector(value):
-                log.warning(f'Header "{header}" value "{value}" is not a valid CVSSSv3.1 vector. Must be of the pattern \'AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:H/A:L\' or \'CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:H/A:L\' Skipping...')
+        if mapping['validation_type'] == "CVSS3_VECTOR":
+            # Validates CVSS 3.0 and 3.1 vectors for finding_cvss3_1_vector.
+            # CVSS 4.0 vectors belong in finding_cvss4_vector (use CVSS4_VECTOR type).
+            value = utils.normalize_cvss_vector(value)
+            version = utils.detect_cvss_version(value)
+            if version not in ("3.0", "3.1") and not utils.is_valid_cvss3_vector(value):
+                log.warning(
+                    f'Header "{header}" value "{value}" is not a valid CVSS 3.x vector. '
+                    f'Accepted: CVSS:3.0/..., CVSS:3.1/..., or a bare metric string '
+                    f'(e.g. AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H). '
+                    f'For CVSS 4.0 use the finding_cvss4_vector mapping key. Skipping...'
+                )
                 return None
-            return value
+            if version in ("3.0", "3.1"):
+                return value[9:]  # strip CVSS:3.x/ prefix for PTRAC storage
+            return value          # bare metric string: store as-is
+
+        if mapping['validation_type'] == "CVSS4_VECTOR":
+            # Validates CVSS 4.0 vectors for finding_cvss4_vector.
+            value = utils.normalize_cvss_vector(value)
+            if not utils.is_valid_cvss4_vector(value):
+                log.warning(
+                    f'Header "{header}" value "{value}" is not a valid CVSS 4.0 vector. '
+                    f'Must start with CVSS:4.0/ and include all 11 base metrics '
+                    f'(AV, AC, AT, PR, UI, VC, VI, VA, SC, SI, SA). Skipping...'
+                )
+                return None
+            return value  # keep full CVSS:4.0/... string
 
         if mapping['validation_type'] == "POS_INT_AS_STR":
             if not utils.is_str_positive_integer(value):

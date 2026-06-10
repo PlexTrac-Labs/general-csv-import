@@ -1,6 +1,7 @@
 import zipfile
 
 from csv_parser import CSVParser
+import utils.general_utils as utils
 
 
 def _make_zip_with_image(folder, node_id, file_name, image_bytes=b"\x89PNGfakedata"):
@@ -454,3 +455,47 @@ def test_generated_ptrac_contains_report_media_summary():
 
     assert "ReportMedia" in ptracs[0]["summary"]
     assert ptracs[0]["summary"]["ReportMedia"] == {"abc.png": {"data": "ZmFrZQ=="}}
+
+
+# ---- CVSS validation type routing -------------------------------------------
+
+def _validate(mapping_key: str, value: str):
+    """Run validate_value for a single mapping key through a throwaway parser."""
+    parser = CSVParser()
+    mapping = parser.data_mapping[mapping_key]
+    return parser.validate_value(mapping["id"], mapping, value)
+
+
+def test_cvss_vector_accepts_3x_vectors():
+    assert _validate("finding_cvss3_1_vector", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") == "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+    assert _validate("finding_cvss3_1_vector", "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") == "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+    assert _validate("finding_cvss3_1_vector", "cvss:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") == "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+    # Bare metric string also accepted
+    assert _validate("finding_cvss3_1_vector", "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") == "AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+
+
+def test_cvss_vector_rejects_40_and_garbage():
+    # 4.0 vectors must go to finding_cvss4_vector, not finding_cvss3_1_vector
+    assert _validate("finding_cvss3_1_vector", "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N") is None
+    assert _validate("finding_cvss3_1_vector", "not-a-vector") is None
+
+
+def test_cvss4_vector_accepts_40_and_normalises_prefix():
+    full = "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+    assert _validate("finding_cvss4_vector", full) == full
+    # Lowercase prefix normalised
+    lower = "cvss:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+    assert _validate("finding_cvss4_vector", lower) == full
+
+
+def test_cvss4_vector_rejects_3x_and_garbage():
+    assert _validate("finding_cvss4_vector", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") is None
+    assert _validate("finding_cvss4_vector", "not-a-vector") is None
+
+
+def test_finding_template_includes_cvss4_risk_score_section():
+    parser = CSVParser()
+    cvss4 = parser.finding_template["risk_score"]["CVSS4"]
+    assert "overall" in cvss4
+    assert "vector" in cvss4
+    assert "cvss4" not in parser.finding_template["fields"]["scores"]

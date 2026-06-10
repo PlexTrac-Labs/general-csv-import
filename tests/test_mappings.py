@@ -264,6 +264,7 @@ def test_create_temp_data_csv_example_dradis_zip_builds_graph_rows():
     assert evidence_row["recommendations"] == "Fix it"
     assert evidence_row["references"] == "https://ref.example"
     assert evidence_row["cvss_vector"] == "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"
+    assert float(evidence_row["cvss_overall"]) == 5.3
     assert evidence_row["asset_name"] == "https://example.com/"
     assert evidence_row["affected_asset_location_url"] == "https://example.com/login"
     assert evidence_row["affected_asset_port_number"] == "443"

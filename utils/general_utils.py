@@ -2,10 +2,11 @@ import re
 import time
 import json
 from hashlib import sha256
-from typing import List
+from typing import List, Optional
 from copy import copy, deepcopy
 import os
 
+from cvss import CVSS3, CVSS4, CVSSError
 try:
     import textile
 except ImportError:
@@ -185,66 +186,152 @@ def is_valid_cwe(cwe: str, has_prefix: bool = True) -> bool:
     else:
         cwe_num = re.compile(r'[0-9]')
         return cwe_num.match(cwe) is not None
-    
+
+
+# ---- CVSS version detection and prefix normalisation ------------------------
+
+def detect_cvss_version(vector: str) -> Optional[str]:
+    """Return the CVSS version declared in the vector prefix.
+
+    Matching is case-insensitive so ``cvss:3.1/...`` is recognised the same as
+    ``CVSS:3.1/...``.  Returns ``"4.0"``, ``"3.1"``, ``"3.0"``, or ``None``
+    when no recognised ``CVSS:x.y/`` prefix is present.
+    """
+    upper = vector.strip().upper()
+    if upper.startswith("CVSS:4.0/"):
+        return "4.0"
+    if upper.startswith("CVSS:3.1/"):
+        return "3.1"
+    if upper.startswith("CVSS:3.0/"):
+        return "3.0"
+    return None
+
+
+def normalize_cvss_vector(vector: str) -> str:
+    """Uppercase the ``CVSS:x.y/`` prefix if present; leave the body as-is.
+
+    Handles lowercase or mixed-case prefixes produced by some tools, e.g.
+    ``cvss:3.1/AV:N/...`` → ``CVSS:3.1/AV:N/...``.
+    Bare metric strings without a prefix are returned unchanged.
+    """
+    stripped = vector.strip()
+    match = re.match(r'^(cvss:\d+\.\d+/)', stripped, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).upper() + stripped[match.end():]
+    return stripped
+
+
+# ---- Validation (backed by the ``cvss`` package) ----------------------------
+
+def is_valid_cvss3_vector(cvss_vector: str) -> bool:
+    """Return True when *cvss_vector* is a valid CVSS 3.0 metric body.
+
+    Accepts both bare metric strings and full ``CVSS:3.0/...`` prefixed strings.
+    Validation is delegated to the ``cvss`` library.
+    Example valid input: ``AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H``
+    """
+    body = re.sub(r'^CVSS:3\.0/', '', cvss_vector.strip(), flags=re.IGNORECASE)
+    try:
+        CVSS3("CVSS:3.0/" + body)
+        return True
+    except CVSSError:
+        return False
+
 
 def is_valid_cvss3_1_vector(cvss_vector: str) -> bool:
-    """
-    Checks if a string has the correct CVSS3.1 calculation/vector format. Calculations are checked against the format `AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:H/A:L`
+    """Return True when *cvss_vector* is a valid CVSS 3.1 metric body.
 
-    :param cvss_vector: cvss vector string to check
-    :type cvss_vector: str
-    :return: boolean result of validation
-    :rtype: bool
+    Accepts both bare metric strings and full ``CVSS:3.1/...`` prefixed strings.
+    Validation is delegated to the ``cvss`` library.
+    Example valid input: ``AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H``
     """
-    pattern = re.compile(r"^((AV:[NALP]|AC:[LH]|PR:[NLH]|UI:[NR]|S:[UC]|[CIA]:[NLH]|E:[XUPFH]|RL:[XOTWU]|RC:[XURC]|[CIA]R:[XLMH]|MAV:[XNALP]|MAC:[XLH]|MPR:[XNLH]|MUI:[XNR]|MS:[XUC]|M[CIA]:[XNLH])/)*(AV:[NALP]|AC:[LH]|PR:[NLH]|UI:[NR]|S:[UC]|[CIA]:[NLH]|E:[XUPFH]|RL:[XOTWU]|RC:[XURC]|[CIA]R:[XLMH]|MAV:[XNALP]|MAC:[XLH]|MPR:[XNLH]|MUI:[XNR]|MS:[XUC]|M[CIA]:[XNLH])$") 
-    return pattern.match(cvss_vector) is not None
+    body = re.sub(r'^CVSS:3\.1/', '', cvss_vector.strip(), flags=re.IGNORECASE)
+    try:
+        CVSS3("CVSS:3.1/" + body)
+        return True
+    except CVSSError:
+        return False
 
+
+def is_valid_cvss4_vector(cvss_vector: str) -> bool:
+    """Return True when *cvss_vector* is a valid CVSS 4.0 vector.
+
+    Accepts both bare body strings and full ``CVSS:4.0/...`` prefixed strings.
+    Validation is delegated to the ``cvss`` library.  Note: the ICS/OT Safety
+    Impact extension (``SI:S`` / ``SA:S``) is not supported by the library and
+    will be rejected.
+    """
+    body = re.sub(r'^CVSS:4\.0/', '', cvss_vector.strip(), flags=re.IGNORECASE)
+    try:
+        CVSS4("CVSS:4.0/" + body)
+        return True
+    except CVSSError:
+        return False
+
+
+def is_valid_cvss_vector(vector: str) -> bool:
+    """Return True when *vector* is a valid CVSS 3.0, 3.1, or 4.0 vector.
+
+    Normalises the prefix before checking so lowercase prefixes like
+    ``cvss:3.1/...`` are accepted, then routes to the version-specific
+    validator.  Bare metric strings with no prefix are validated as CVSS 3.1.
+    """
+    v = normalize_cvss_vector(vector)
+    version = detect_cvss_version(v)
+    if version == "4.0":
+        return is_valid_cvss4_vector(v)
+    if version == "3.0":
+        return is_valid_cvss3_vector(v)
+    if version == "3.1":
+        return is_valid_cvss3_1_vector(v)
+    return is_valid_cvss3_1_vector(v)  # bare string: validate as CVSS 3.1
+
+
+# ---- Score calculation (backed by the ``cvss`` package) ---------------------
 
 def calculate_cvss3_base_score(vector: str) -> float:
+    """Compute the CVSS 3.0 or 3.1 base score from a vector string.
+
+    Accepts both prefixed (``CVSS:3.x/...``) and bare metric strings.
+    Normalises a lowercase prefix before scoring.
+    Raises :class:`ValueError` for invalid or unrecognised vectors.
     """
-    Compute CVSS v3.0/v3.1 base score from a vector string.
+    v = normalize_cvss_vector(vector)
+    version = detect_cvss_version(v)
+    if version is None:
+        v = "CVSS:3.1/" + v  # bare string: assume 3.x
+    try:
+        return float(CVSS3(v).base_score)
+    except CVSSError as exc:
+        raise ValueError(f"Invalid CVSS 3.x vector '{vector}': {exc}") from exc
+
+
+def calculate_cvss_base_score(vector: str) -> Optional[float]:
+    """Return the CVSS base score computed from the vector string.
+
+    Handles CVSS 3.0, 3.1, and 4.0 vectors (with or without prefix).
+    Normalises a lowercase prefix before scoring.
+    Returns ``None`` for unrecognised or invalid vectors.
     """
-    v = re.sub(r'^CVSS:3\.[01]/', '', vector.strip())
-    metrics = dict(part.split(":", 1) for part in v.split("/"))
-
-    weights = {
-        "AV": {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2},
-        "AC": {"L": 0.77, "H": 0.44},
-        "PR_U": {"N": 0.85, "L": 0.62, "H": 0.27},
-        "PR_C": {"N": 0.85, "L": 0.68, "H": 0.5},
-        "UI": {"N": 0.85, "R": 0.62},
-        "S": {"U": "U", "C": "C"},
-        "CIA": {"H": 0.56, "L": 0.22, "N": 0.0},
-    }
-
-    scope = metrics["S"]
-    impact_sub_score = 1 - (
-        (1 - weights["CIA"][metrics["C"]])
-        * (1 - weights["CIA"][metrics["I"]])
-        * (1 - weights["CIA"][metrics["A"]])
-    )
-    if scope == "U":
-        impact = 6.42 * impact_sub_score
-    else:
-        impact = 7.52 * (impact_sub_score - 0.029) - 3.25 * ((impact_sub_score - 0.02) ** 15)
-
-    pr_key = "PR_U" if scope == "U" else "PR_C"
-    exploitability = (
-        8.22
-        * weights["AV"][metrics["AV"]]
-        * weights["AC"][metrics["AC"]]
-        * weights[pr_key][metrics["PR"]]
-        * weights["UI"][metrics["UI"]]
-    )
-
-    if impact <= 0:
-        return 0.0
-    if scope == "U":
-        score = min(impact + exploitability, 10)
-    else:
-        score = min(1.08 * (impact + exploitability), 10)
-
-    return int(score * 10 + 0.999999) / 10
+    v = normalize_cvss_vector(vector)
+    version = detect_cvss_version(v)
+    if version in ("3.0", "3.1"):
+        try:
+            return float(CVSS3(v).base_score)
+        except CVSSError as exc:
+            log.warning(f"CVSS 3.x score calculation failed for '{v}': {exc}")
+            return None
+    if version == "4.0":
+        try:
+            return float(CVSS4(v).base_score)
+        except CVSSError as exc:
+            log.warning(f"CVSS 4.0 score calculation failed for '{v}': {exc}")
+            return None
+    # Bare string (no prefix): try as 3.x
+    try:
+        return float(CVSS3("CVSS:3.1/" + v).base_score)
+    except CVSSError:
+        return None
 
 
 def update_open_closing_tags(value: str, start_tag: str, end_tag: str, new_start_tag: str, new_end_tag: str, strip_br_tags: bool = False) -> str:
