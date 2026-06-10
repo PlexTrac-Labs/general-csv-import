@@ -215,6 +215,7 @@ def deepcopy_client_info(ptrac: dict) -> dict:
     """
     client_info = json.loads(json.dumps(ptrac.get("client_info", {}), default=str))
     client_info.pop("tenant_id", None)
+    client_info.pop("doc_type", None)
     return client_info
 
 

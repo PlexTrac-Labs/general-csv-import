@@ -4,7 +4,7 @@ import logging
 # LOGGING
 console_log_level = logging.INFO
 file_log_level = logging.INFO
-save_logs_to_file = False
+save_logs_to_file = True
 
 # Flag to run the script in interactive mode (with interactive prompts)
 # If True, the script will prompt the user for input when required info is missing
