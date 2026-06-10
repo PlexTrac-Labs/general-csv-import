@@ -17,6 +17,8 @@ import utils.data_utils as data
 import api
 import mappings
 
+MISSING_CLIENTS_FILE_NAME = os.path.join("logs", "missing_plextrac_clients.txt")
+
 
 def load_config_defaults(config_path: str = "config.yaml") -> dict:
     if not os.path.exists(config_path):
@@ -78,46 +80,178 @@ def save_temp_csv_for_debug(rows: List[list], file_path: str) -> None:
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
-    config = load_config_defaults()
+    """
+    Build the argument parser with all defaults set to None.
+
+    Config-file values and hard defaults are layered in separately by
+    apply_config_defaults() so a None value reliably means "not provided on the
+    CLI" and config can be merged underneath it.
+    """
     parser = argparse.ArgumentParser(description="General CSV Import template parser")
-    parser.add_argument("--data-file-path", default=config.get("data_file_path", "") or "", help="Path to a single input data file.")
-    parser.add_argument("--data-folder-path", default=config.get("data_folder_path", "") or "", help="Path to a folder of input data files to process. Only one of --data-file-path or --data-folder-path should be used.")
-    parser.add_argument("--headers-file-path", default=config.get("headers_file_path", "") or "", help="Path to customer header mapping CSV file.")
+    parser.add_argument("--data-file-path", default=None, help="Path to a single input data file.")
+    parser.add_argument("--data-folder-path", default=None, help="Path to a folder of input data files to process. Only one of --data-file-path or --data-folder-path should be used.")
+    parser.add_argument("--headers-file-path", default=None, help="Path to customer header mapping CSV file.")
     parser.add_argument(
         "--type",
         choices=[map_type.value for map_type in mappings.MapType],
-        default=config.get("type"),
+        default=None,
         help="Parser mapping type to use.",
     )
-    parser.add_argument("--api-version", default=config.get("api_version", "") or "", help="PlexTrac API version, e.g. '2.19.0'.")
-    parser.add_argument("--client-name", default=config.get("client_name", "") or "", help="Optional client name override for custom mappings.")
-    parser.add_argument("--report-name", default=config.get("report_name", "") or "", help="Optional report name override for custom mappings.")
-    parser.add_argument("--report-template-name", default=config.get("report_template_name", "") or "", help="Optional PlexTrac report template name to attach to generated PTRAC reports.")
-    parser.add_argument("--findings-layout-name", default=config.get("findings_layout_name", "") or "", help="Optional PlexTrac finding layout name to attach to generated PTRAC reports.")
-    parser.add_argument("--force-generate-ptrac", action="store_true", default=bool(config.get("force_generate_ptrac", False)), help="Continue PTRAC generation after recoverable template/layout lookup errors.")
+    parser.add_argument("--api-version", default=None, help="PlexTrac API version, e.g. '2.19.0'.")
+    parser.add_argument("--client-name", default=None, help="Optional source client-name value to inject when the input data or custom mapping does not provide one. This does not filter output.")
+    parser.add_argument("--limit-to-client-name", default=None, help="Only save or import generated PTRACs whose generated PlexTrac client name exactly matches this value. This is distinct from --client-name.")
+    parser.add_argument("--report-name", default=None, help="Optional report name override for custom mappings.")
+    parser.add_argument("--report-template-name", default=None, help="Optional PlexTrac report template name to attach to generated PTRAC reports.")
+    parser.add_argument("--findings-layout-name", default=None, help="Optional PlexTrac finding layout name to attach to generated PTRAC reports.")
+    parser.add_argument("--force-generate-ptrac", action="store_true", default=None, help="Continue PTRAC generation after recoverable template/layout lookup errors.")
     parser.add_argument(
         "--finding-merge-strategy",
         choices=["none", "title", "user_defined_fields", "all_fields"],
-        default=config.get("finding_merge_strategy", "none") or "none",
+        default=None,
         help="Optional finding merge strategy.",
     )
-    parser.add_argument("--output-dir", default=config.get("output_dir", "exported_ptracs") or "exported_ptracs", help="Directory for generated PTRAC files.")
-    parser.add_argument("--import-to-plextrac", action="store_true", default=bool(config.get("import_to_plextrac", False)), help="Import generated PTRAC reports into PlexTrac.")
-    parser.add_argument("--instance-url", default=config.get("instance_url", "") or "", help="PlexTrac instance URL for import/template lookup.")
-    parser.add_argument("-u", "--username", default=config.get("username", "") or "", help="PlexTrac username for import/template lookup.")
-    parser.add_argument("-p", "--password", default=config.get("password", "") or "", help="PlexTrac password for import/template lookup.")
+    parser.add_argument("--output-dir", default=None, help="Directory for generated PTRAC files.")
+    parser.add_argument("--import-to-plextrac", action="store_true", default=None, help="Import generated PTRAC reports into PlexTrac.")
+    parser.add_argument("--force-create-clients", action="store_true", default=None, help="Create missing PlexTrac clients during PTRAC import instead of skipping those reports.")
+    parser.add_argument("--instance-url", default=None, help="PlexTrac instance URL for import/template lookup.")
+    parser.add_argument("-u", "--username", default=None, help="PlexTrac username for import/template lookup.")
+    parser.add_argument("-p", "--password", default=None, help="PlexTrac password for import/template lookup.")
     return parser
+
+
+def apply_config_defaults(args: argparse.Namespace, config: Optional[dict] = None) -> argparse.Namespace:
+    """
+    Layer config-file values and hard defaults underneath the parsed CLI args.
+
+    Only fields still set to None (i.e. not provided on the CLI) are filled, so
+    CLI values always win over config, which in turn wins over the hard default.
+    """
+    if config is None:
+        config = load_config_defaults()
+
+    string_defaults = {
+        "data_file_path": "",
+        "data_folder_path": "",
+        "headers_file_path": "",
+        "type": None,
+        "api_version": "",
+        "client_name": "",
+        "limit_to_client_name": "",
+        "report_name": "",
+        "report_template_name": "",
+        "findings_layout_name": "",
+        "finding_merge_strategy": "none",
+        "output_dir": "exported_ptracs",
+        "instance_url": "",
+        "username": "",
+        "password": "",
+    }
+    boolean_defaults = {
+        "force_generate_ptrac": False,
+        "import_to_plextrac": False,
+        "force_create_clients": False,
+    }
+
+    for field_name, default_value in string_defaults.items():
+        if getattr(args, field_name) is None:
+            config_value = config.get(field_name, default_value)
+            setattr(args, field_name, default_value if config_value is None else config_value)
+
+    for field_name, default_value in boolean_defaults.items():
+        if getattr(args, field_name) is None:
+            setattr(args, field_name, bool(config.get(field_name, default_value)))
+
+    return args
+
+
+def parse_args(cli_args=None) -> argparse.Namespace:
+    """
+    Parse CLI args and merge config-file defaults underneath them.
+    """
+    config = load_config_defaults()
+    parser = create_argument_parser()
+    args = parser.parse_args(cli_args)
+    return apply_config_defaults(args, config)
+
+
+def filter_ptracs_by_client_name(ptracs: list, client_name_filter: str) -> list:
+    """
+    Keep only generated PTRACs whose PlexTrac client name exactly matches the requested filter.
+    """
+    if not client_name_filter:
+        return ptracs
+
+    filtered_ptracs = [
+        ptrac for ptrac in ptracs
+        if ptrac.get("client_info", {}).get("name", "") == client_name_filter
+    ]
+    skipped_count = len(ptracs) - len(filtered_ptracs)
+    log.info(f"Client-name filter '{client_name_filter}' kept {len(filtered_ptracs)} PTRAC(s) and skipped {skipped_count}.")
+    return filtered_ptracs
+
+
+def write_missing_clients_file(client_names: list, file_path: str = MISSING_CLIENTS_FILE_NAME) -> None:
+    """
+    Write a sorted unique list of PlexTrac client names that were missing during import.
+    """
+    missing_client_names = sorted({client_name for client_name in client_names if client_name})
+    if not missing_client_names:
+        return None
+
+    directory = os.path.dirname(file_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(file_path, "w", encoding="utf-8") as file:
+        for client_name in missing_client_names:
+            file.write(f"{client_name}\n")
+
+    log.warning(f"Wrote {len(missing_client_names)} missing PlexTrac client name(s) to '{file_path}'.")
+    return None
+
+
+def deepcopy_client_info(ptrac: dict) -> dict:
+    """
+    Return a JSON-safe copy of a PTRAC's client_info, stripped of tenant-scoped fields.
+    """
+    client_info = json.loads(json.dumps(ptrac.get("client_info", {}), default=str))
+    client_info.pop("tenant_id", None)
+    return client_info
+
+
+def create_plextrac_client_from_ptrac(ptrac: dict, auth: Auth) -> Optional[dict]:
+    """
+    Create the PlexTrac client described by a PTRAC and return a local client-list item.
+    """
+    client_info = deepcopy_client_info(ptrac)
+    client_name = client_info.get("name", "")
+    if not client_name:
+        return None
+
+    response = api.clients.create_client(auth.base_url, auth.get_auth_headers(), client_info)
+    response_json = getattr(response, "json", {}) or {}
+    if response_json.get("status") not in [None, "success"]:
+        raise RuntimeError(f"Create client response was not successful: {response_json}")
+
+    client_id = response_json.get("client_id") or response_json.get("id")
+    if not client_id:
+        data_item = response_json.get("data") if isinstance(response_json.get("data"), dict) else {}
+        client_id = data_item.get("client_id") or data_item.get("id")
+    if not client_id:
+        raise RuntimeError(f"Create client response did not include a client_id: {response_json}")
+
+    return {"client_id": client_id, "name": client_name}
 
 
 def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
     auth = Auth(args)
     auth.handle_authentication()
+    force_create_clients = getattr(args, "force_create_clients", False)
 
     clients = []
     if not data.get_page_of_clients(clients=clients, auth=auth):
         log.critical("Could not load clients from PlexTrac. Exiting...")
         exit(1)
-    if len(clients) < 1:
+    if len(clients) < 1 and not force_create_clients:
         log.critical("Did not find any clients in PlexTrac instance. Exiting...")
         exit(1)
 
@@ -131,6 +265,7 @@ def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
         report_names_by_client_id.setdefault(report["client_id"], []).append(report["name"])
 
     failed_reports = []
+    missing_client_names = []
     for ptrac in ptracs:
         client_name = ptrac.get("client_info", {}).get("name", "")
         report_name = ptrac.get("report_info", {}).get("name", "")
@@ -142,10 +277,26 @@ def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
 
         matching_clients = [client for client in clients if client_name == client["name"]]
         if len(matching_clients) == 0:
-            log.error(f"Mapped client name '{client_name}' does not exist in PlexTrac. Skipping...")
-            failed_reports.append(f"Client: {client_name} | Report: {report_name}")
-            utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
-            continue
+            if not force_create_clients:
+                log.error(f"Mapped client name '{client_name}' does not exist in PlexTrac. Skipping...")
+                failed_reports.append(f"Client: {client_name} | Report: {report_name}")
+                missing_client_names.append(client_name)
+                utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+                continue
+
+            try:
+                created_client = create_plextrac_client_from_ptrac(ptrac, auth)
+                if created_client is None:
+                    raise RuntimeError("PTRAC did not include a client name.")
+                clients.append(created_client)
+                matching_clients = [created_client]
+                log.success(f"Created missing PlexTrac client '{client_name}'")
+            except Exception as e:
+                log.error(f"Could not create missing PlexTrac client '{client_name}'. Skipping report '{report_name}'...\n{e}")
+                failed_reports.append(f"Client: {client_name} | Report: {report_name}")
+                missing_client_names.append(client_name)
+                utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+                continue
 
         client_id = matching_clients[0]["client_id"]
         if report_name in report_names_by_client_id.get(client_id, []):
@@ -161,11 +312,13 @@ def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
             multipart_form_data = {"file": (file_name, file_buf, "application/json")}
             api.reports.import_ptrac_report(auth.base_url, auth.get_auth_headers(), client_id, multipart_form_data)
             log.success(f"Imported report '{report_name}' to client '{client_name}'")
+            report_names_by_client_id.setdefault(client_id, []).append(report_name)
         except Exception as e:
             log.error(f"Could not import report '{report_name}'. Skipping...\n{e}")
             failed_reports.append(f"Client: {client_name} | Report: {report_name}")
             utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
 
+    write_missing_clients_file(missing_client_names)
     if failed_reports:
         log.error(f"Finished importing with {len(failed_reports)} failed report(s). Failed PTRAC files were saved to failed_ptracs.")
     else:
@@ -361,6 +514,11 @@ def run(args: argparse.Namespace):
     if failed_files:
         log.warning(f"PTRAC creation completed with {len(failed_files)} skipped input file(s): {failed_files}")
 
+    all_ptracs = filter_ptracs_by_client_name(all_ptracs, getattr(args, "limit_to_client_name", ""))
+    if not all_ptracs:
+        log.critical("No PTRAC data matched the requested client-name filter. Exiting...")
+        exit(1)
+
     if args.import_to_plextrac:
         import_ptracs_to_plextrac(all_ptracs, args)
         return None
@@ -377,5 +535,4 @@ if __name__ == "__main__":
         print(i)
 
     input.set_interactive_mode(settings.interactive)
-    arg_parser = create_argument_parser()
-    run(arg_parser.parse_args())
+    run(parse_args())

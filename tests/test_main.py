@@ -17,8 +17,7 @@ def test_argument_parser_uses_config_defaults(tmp_path, monkeypatch):
     )
     monkeypatch.chdir(tmp_path)
 
-    parser = main.create_argument_parser()
-    args = parser.parse_args([])
+    args = main.parse_args([])
 
     assert args.data_file_path == "data.csv"
     assert args.headers_file_path == "header_mapping.csv"
@@ -34,8 +33,7 @@ def test_argument_parser_cli_values_override_config(tmp_path, monkeypatch):
     )
     monkeypatch.chdir(tmp_path)
 
-    parser = main.create_argument_parser()
-    args = parser.parse_args([
+    args = main.parse_args([
         "--data-file-path", "cli-data.csv",
         "--headers-file-path", "cli-mapping.csv",
         "--api-version", "3.2.1",
@@ -59,7 +57,7 @@ def test_argument_parser_uses_data_folder_path_config_default(tmp_path, monkeypa
     config.write_text("data_folder_path: input_files/group\n")
     monkeypatch.chdir(tmp_path)
 
-    args = main.create_argument_parser().parse_args([])
+    args = main.parse_args([])
 
     assert args.data_folder_path == "input_files/group"
     assert args.data_file_path == ""
@@ -68,7 +66,7 @@ def test_argument_parser_uses_data_folder_path_config_default(tmp_path, monkeypa
 def test_argument_parser_preserves_both_file_and_folder_until_execution(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    args = main.create_argument_parser().parse_args([
+    args = main.parse_args([
         "--data-file-path", "one.csv",
         "--data-folder-path", "a_folder",
     ])
@@ -82,7 +80,7 @@ def test_argument_parser_accepts_template_and_layout(tmp_path, monkeypatch):
     config.write_text("findings_layout_name: Config Layout\n")
     monkeypatch.chdir(tmp_path)
 
-    args = main.create_argument_parser().parse_args([
+    args = main.parse_args([
         "--report-template-name", "CLI Template",
     ])
 
@@ -153,7 +151,7 @@ def test_run_processes_each_folder_input_and_saves_ptracs(tmp_path, monkeypatch)
     (data_dir / "b.csv").write_text(header + "Acme,Report B,Finding 2,Low,Open,desc\n")
 
     out_dir = tmp_path / "out"
-    args = main.create_argument_parser().parse_args([
+    args = main.parse_args([
         "--type", "example_csv",
         "--data-folder-path", str(data_dir),
         "--api-version", "2.19.0",
