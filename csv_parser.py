@@ -474,6 +474,14 @@ class CSVParser():
             'input_blanks': False,
             'path': ['parent_asset_sid']
         },
+        'asset_custom_field': {
+            'id': 'asset_custom_field',
+            'object_type': 'ASSET',
+            'data_type' : 'KEY_CUSTOM_FIELD',
+            'validation_type': None,
+            'input_blanks': False,
+            'path': ['fields']
+        },
         'asset_type': {
             'id': 'asset_type',
             'object_type': 'ASSET',
@@ -847,6 +855,7 @@ class CSVParser():
         'knownIps': [],
         'operating_system': [],
         'tags': [],
+        'fields': {},
         'ports': {}
     }
 
@@ -1291,6 +1300,9 @@ class CSVParser():
         utils.merge_sanitized_str_lists(og_asset['operating_system'], dup_asset['operating_system'])
         utils.merge_sanitized_str_lists(og_asset['knownIps'], dup_asset['knownIps'])
         utils.merge_sanitized_str_lists(og_asset['tags'], dup_asset['tags'])
+        # merge asset custom fields; later rows for the same field key overwrite earlier values
+        # (setdefault keeps this safe if og_asset predates the 'fields' template addition)
+        og_asset.setdefault('fields', {}).update(dup_asset.get('fields', {}))
         # propagate a parent link discovered on a duplicate to the original (use .get so it is
         # safe on ReportAssets/affected-asset dicts that no longer carry parent_asset_sid)
         if not og_asset.get('parent_asset_sid') and dup_asset.get('parent_asset_sid'):
@@ -1912,17 +1924,24 @@ class CSVParser():
 
         self.set_value(obj, mapping['path'], label_value)
 
-    # finding custom field
-    def add_key_label_value(self, header, obj, mapping, value):
-        path = copy(mapping['path'])
-        path.append(utils.format_key(header.strip()))
+    # keyed custom field (findings and assets - both stored as a key/value map under 'fields')
+    def add_custom_field(self, header, obj, mapping, value):
+        key = utils.format_key(header.strip())
         value = self.format_rich_text_value(value, header)
+        # Reuse metadata when a later column normalizes to the same field key.
+        # The latest label/value wins, but cuid and sort order stay stable.
+        existing_field = obj.get(mapping['path'][0], {}).get(key, {})
 
         label_value = {
+            'cuid': existing_field.get('cuid', str(uuid4())),
+            'key': key,
             'label': header.strip(),
-            'value': value
+            'value': value,
+            'sortOrder': existing_field.get('sortOrder', len(obj.get(mapping['path'][0], {})) + 1)
         }
 
+        path = copy(mapping['path'])
+        path.append(key)
         self.set_value(obj, path, label_value)
 
     # tag
@@ -2086,7 +2105,7 @@ class CSVParser():
                 elif data_type == "CUSTOM_FIELD":
                     self.add_label_value(header, obj, data_mapping, value)
                 elif data_type == "KEY_CUSTOM_FIELD":
-                    self.add_key_label_value(header, obj, data_mapping, value)
+                    self.add_custom_field(header, obj, data_mapping, value)
                 elif data_type == "TAG":
                     self.add_tag(header, obj, data_mapping, value)
                 elif data_type == "MULTI_TAG":

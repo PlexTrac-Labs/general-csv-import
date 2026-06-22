@@ -73,6 +73,7 @@ Finding mappings include merge metadata used by parser merge strategies. `SCALAR
 |---|---|
 | asset_multi_name | List of comma delimited asset names. Any assets created with this key will NOT have any other asset data added to them. The following asset keys will only be added to the single asset under the `asset_name` column. |
 | asset_name | A single asset name. For a comma delimited list of asset names see `asset_multi_name` above |
+| asset_custom_field | Asset custom field value, added to the Client Asset specified with the `asset_name` key. The csv column header is used as the field label. You can use this key for multiple headers. |
 | asset_type | Asset type. Accepted values `Workstation`, `Server`, `Network Device`, `Application`, `General`. Any other value will be ignored and the asset will not have a type set. |
 | asset_criticality | Asset criticality. Accepted values `Critical`, `High`, `Medium`, `Low`, `Informational`. Any other value will be ignored and the asset will not have a criticality set. |
 | asset_system_owner | Asset system owner |
