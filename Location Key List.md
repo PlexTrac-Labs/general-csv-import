@@ -60,8 +60,19 @@ Finding mappings include merge metadata used by parser merge strategies. `SCALAR
 | finding_multi_tag | List of comma delimited tags to be added as finding tags. See tag format schema. |
 | finding_title | Finding title. This is the only required key, if not added to any columns the script will not run. |
 | finding_custom_field | Finding custom field value. The csv column header will be used as the label. You can use this key for multiple headers. |
-| finding_cvss3_1_overall | Overall CVSS3.1 score |
-| finding_cvss3_1_vector | CVSS3.1 vector. Should be a CVSS 3.1 vector string without the version prefix `AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N` |
+| finding_cvss4_overall | Overall CVSS 4.0 score. Must be a float. |
+| finding_cvss4_vector | CVSS 4.0 vector. Must be a full vector string starting with the `CVSS:4.0/` prefix and include all 11 base metrics, e.g. `CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N`. The full string (including prefix) is stored. |
+| finding_cvss3_1_overall | Overall CVSS 3.1 score. Must be a float. |
+| finding_cvss3_1_vector | CVSS 3.x vector. Accepts a `CVSS:3.0/...` string, a `CVSS:3.1/...` string, or a bare metric string `AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N`. The version prefix is stripped before storage. |
+| finding_cvss3_vector | Legacy CVSS 3 vector string. |
+| finding_cvss3_value | Legacy CVSS 3 numeric score value. |
+| finding_cvss3_label | Legacy CVSS 3 score label. |
+| finding_cvss2_vector | CVSS 2 vector string. |
+| finding_cvss2_value | CVSS 2 numeric score value. |
+| finding_cvss2_label | CVSS 2 score label. |
+| finding_cvss_general_vector | General CVSS vector string. |
+| finding_cvss_general_value | General CVSS numeric score value. |
+| finding_cvss_general_label | General CVSS score label. |
 | finding_cve | List of comma delimited cveIds in the format `CVE-1337-1234` |
 | finding_cwe | List of comma delimited CWE Weakness IDs in the format `123` |
 
