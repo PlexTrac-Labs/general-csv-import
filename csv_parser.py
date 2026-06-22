@@ -466,6 +466,14 @@ class CSVParser():
             'input_blanks': False,
             'path': ['asset']
         },
+        'parent_asset': {
+            'id': 'parent_asset',
+            'object_type': 'ASSET',
+            'data_type' : 'PARENT_ASSET',   # intentionally not dispatched in add_data_to_object; handled specially in handle_asset
+            'validation_type': None,
+            'input_blanks': False,
+            'path': ['parent_asset_sid']
+        },
         'asset_type': {
             'id': 'asset_type',
             'object_type': 'ASSET',
@@ -771,7 +779,7 @@ class CSVParser():
         'sid': None,
         'client_sid': None,
         'report_sid': None,
-        'affected_asset_sid': None,
+        'affected_asset_sid': {},   # {asset_sid: affected_fields_sid} - one affected-fields record per asset on the finding
         'title': None,
         'severity': "Informational",
         'status': "Open",
@@ -831,6 +839,7 @@ class CSVParser():
         'client_sid': None,
         'finding_sid': None,
         'original_asset_sid': None,
+        'parent_asset_sid': None,   # stable sid of this asset's parent; resolved to a real id at generation
         'is_multi': False,
         'asset': None,
         'assetCriticality': None,
@@ -1211,19 +1220,30 @@ class CSVParser():
     def add_asset_to_finding(self, finding, asset, finding_sid, asset_sid):
         """
         Adds the asset data as an affected asset on a finding.
-        Must be called after the finding and asset are created
-        """
-        asset_id = asset['id']
+        Must be called after the finding and asset are created.
 
+        ``asset_sid`` is the ROW's asset sid (NOT the deduped original); it keys this row's
+        affected fields. Assets with no mapped affected fields (e.g. multi-name assets) have
+        no entry in ``affected_asset_sid`` and fall back to the blank affected-asset template.
+        """
         affected_asset = asset
         affected_asset_fields = deepcopy(self.affected_asset_fields)
 
-        # single asset with possible affected asset fields
-        if self.assets[asset_sid]['is_multi'] == False:
-            affected_asset_fields = self.affected_assets[self.findings[finding_sid]['affected_asset_sid']]
-        
+        # resolve the affected fields stored for this specific (finding, row asset) pair
+        affected_fields_sid = None
+        try:
+            affected_fields_sid = self.findings[finding_sid]['affected_asset_sid'][asset_sid]
+        except KeyError:
+            # no affected fields mapped to this row, or the asset is not linked (e.g. multi-name)
+            pass
+        if affected_fields_sid is not None:
+            affected_asset_fields = deepcopy(self.affected_assets[affected_fields_sid])
+            # evidence lives in the report-level array; the affected asset carries reference ids only
+            affected_asset_fields['evidence'] = [str(evidence['id']) for evidence in affected_asset_fields['evidence']]
+
         affected_asset.update(affected_asset_fields)
 
+        asset_id = asset['id']
         if asset_id in finding['affected_assets']:
             existing_affected_asset = finding['affected_assets'][asset_id]
             existing_affected_asset['status'] = affected_asset.get('status', existing_affected_asset.get('status'))
@@ -1231,6 +1251,10 @@ class CSVParser():
             existing_affected_asset['ports'].update(affected_asset.get('ports', {}))
             existing_affected_asset['vulnerableParameters'] = list(
                 set(existing_affected_asset.get('vulnerableParameters', []) + affected_asset.get('vulnerableParameters', []))
+            )
+            # asset merge strategy is taken into account when deduping evidence in generate_ptrac_json_data
+            existing_affected_asset['evidence'] = list(
+                set(existing_affected_asset.get('evidence', []) + affected_asset.get('evidence', []))
             )
 
             if self.asset_merge_strategy in ["user_defined_fields", "all_fields"]:
@@ -1267,10 +1291,56 @@ class CSVParser():
         utils.merge_sanitized_str_lists(og_asset['operating_system'], dup_asset['operating_system'])
         utils.merge_sanitized_str_lists(og_asset['knownIps'], dup_asset['knownIps'])
         utils.merge_sanitized_str_lists(og_asset['tags'], dup_asset['tags'])
+        # propagate a parent link discovered on a duplicate to the original (use .get so it is
+        # safe on ReportAssets/affected-asset dicts that no longer carry parent_asset_sid)
+        if not og_asset.get('parent_asset_sid') and dup_asset.get('parent_asset_sid'):
+            og_asset['parent_asset_sid'] = dup_asset['parent_asset_sid']
         if update_ports:
             for port_id, port_data in dup_asset['ports'].items():
                 if port_id not in og_asset['ports']:
                     og_asset['ports'][port_id] = port_data
+
+
+    def handle_dedup_evidence(self, evidence_list, report_evidence_list):
+        """
+        Dedupes evidence that shares a caption on a single affected asset.
+
+        :param evidence_list: the affected asset's list of evidence reference ids
+                              (finding.affected_assets[INDEX]['evidence']) - mutated in place
+        :type evidence_list: list[str]
+        :param report_evidence_list: the report-level list of evidence objects - mutated in place
+        :type report_evidence_list: list[dict]
+        """
+        def _are_matching_evidence(evidence_1, evidence_2):
+            has_matching_caption = evidence_1['caption'] == evidence_2['caption']
+            has_matching_code = evidence_1['code'].strip().replace("\n", "") == evidence_2['code'].strip().replace("\n", "")
+            return has_matching_caption and has_matching_code
+
+        def _drop(dup_evidence):
+            evidence_list.remove(dup_evidence['id'])
+            report_evidence_list[:] = [e for e in report_evidence_list if e['id'] != dup_evidence['id']]
+
+        evidence_caption_groups = {}
+        for evidence_id in evidence_list:
+            evidence = self.evidence[evidence_id]   # string key (add_evidence stores 'id': str(uuid4()))
+            evidence_caption_groups.setdefault(evidence['caption'], []).append(evidence)
+
+        for dup_evidence_list in evidence_caption_groups.values():
+            if len(dup_evidence_list) <= 1:
+                continue
+            evidence_to_keep = dup_evidence_list[0]
+            for dup_evidence in dup_evidence_list[1:]:
+                if self.asset_merge_strategy == "title":   # delete duplicate evidence by caption
+                    _drop(dup_evidence)
+                elif self.asset_merge_strategy == "user_defined_fields":   # merge duplicate evidence by caption
+                    if _are_matching_evidence(evidence_to_keep, dup_evidence):   # matching caption and code
+                        _drop(dup_evidence)
+                    else:   # matching caption, different code -> concatenate code, drop the duplicate
+                        evidence_to_keep['code'] = f'{evidence_to_keep["code"]}\n{dup_evidence["code"]}'
+                        _drop(dup_evidence)
+                elif self.asset_merge_strategy == "all_fields":   # merge duplicate evidence only when caption and code match
+                    if _are_matching_evidence(evidence_to_keep, dup_evidence):
+                        _drop(dup_evidence)
 
     #----------End post parsing handling functions----------
 
@@ -1428,10 +1498,40 @@ class CSVParser():
 
             self.assets[new_sid] = asset
             self.clients[client_sid]['assets'].append(new_sid)
-            self.findings[finding_sid]['assets'].append(new_sid)
+            if finding_sid is not None:
+                self.findings[finding_sid]['assets'].append(new_sid)
             if lookup_key not in self.asset_lookup:
                 self.asset_lookup[lookup_key] = []
             self.asset_lookup[lookup_key].append(new_sid)
+
+
+    def _ensure_parent_asset(self, client_sid, parent_name):
+        """
+        Ensures a parent asset exists in self.assets, creating it name-only (not attached to a
+        finding) if it does not already exist. Returns the stable (original) sid so the parent
+        link survives deduplication.
+        """
+        parent_name = parent_name.strip()
+        if parent_name == "":
+            return None
+
+        lookup_key = (client_sid, parent_name)
+        existing_assets = self.asset_lookup.get(lookup_key, [])
+        if existing_assets:
+            return existing_assets[0]   # reuse the original so the link is stable through dedup
+
+        new_sid = uuid4()
+        asset = deepcopy(self.asset_template)
+        asset['sid'] = new_sid
+        asset['client_sid'] = client_sid
+        asset['finding_sid'] = None
+        asset['dup_num'] = 1
+        self.set_value(asset, ['asset'], parent_name)
+        asset['is_multi'] = False
+        self.assets[new_sid] = asset
+        self.clients[client_sid]['assets'].append(new_sid)
+        self.asset_lookup[lookup_key] = [new_sid]
+        return new_sid
 
 
     def handle_asset(self, row, client_sid, finding_sid):
@@ -1478,10 +1578,20 @@ class CSVParser():
 
         self.assets[new_sid] = asset
         self.clients[client_sid]['assets'].append(new_sid)
-        self.findings[finding_sid]['assets'].append(new_sid)
+        if finding_sid is not None:
+            self.findings[finding_sid]['assets'].append(new_sid)
         if lookup_key not in self.asset_lookup:
             self.asset_lookup[lookup_key] = []
         self.asset_lookup[lookup_key].append(new_sid)
+
+        # link a parent asset if a parent_asset column is mapped (skip self-parenting)
+        parent_header = self.get_header_from_key('parent_asset')
+        if parent_header is not None:
+            parent_index = self.get_index_from_header(parent_header)
+            if parent_index is not None:
+                parent_name = row[parent_index].strip()
+                if parent_name != "" and parent_name != asset['asset']:
+                    asset['parent_asset_sid'] = self._ensure_parent_asset(client_sid, parent_name)
 
         return new_sid, asset['asset']
 
@@ -1508,7 +1618,7 @@ class CSVParser():
         self.handle_port_data(row, affected_asset_ports, "AFFECTED_ASSET_PORT")
 
         self.affected_assets[new_sid] = affected_asset
-        self.findings[finding_sid]['affected_asset_sid'] = new_sid
+        self.findings[finding_sid]['affected_asset_sid'][asset_sid] = new_sid
 
 
     def handle_port_data(self, row, ports, type):
@@ -2010,14 +2120,16 @@ class CSVParser():
             return
 
         # query csv row for report specific data and create or choose report
-        report_sid, report_name = self.handle_report(row, client_sid)   
+        report_sid, report_name = self.handle_report(row, client_sid)
         if report_sid == None:
-            return     
-        
-        # query csv row for finding specific data and create finding
-        finding_sid, finding_name = self.handle_finding(row, client_sid, report_sid)
-        if finding_sid == None:
             return
+
+        # query csv row for finding specific data and create finding - only when the row actually
+        # has a finding title. A row may represent just an asset (e.g. parent detail), no finding.
+        finding_sid = None
+        finding_title_index = self.get_index_from_key("finding_title")
+        if finding_title_index is not None and str(row[finding_title_index]).strip() != "":
+            finding_sid, finding_name = self.handle_finding(row, client_sid, report_sid)
 
         self.handle_multi_asset(row, client_sid, finding_sid)
         log.debug(f'After MULTI asset call, asset list:')
@@ -2053,18 +2165,24 @@ class CSVParser():
             log.critical(f'Did not map "finding_title" key to any csv headers during temporary CSV creation. Cannot process file. Skipping...')
             return False
 
+        # an asset_name column lets a row stand on its own as an asset-only row (no finding)
+        csv_asset_name_index = self.get_index_from_key("asset_name")
+
         log.info(f'---Beginning CSV parsing---')
         self.parser_progress = 0
         for row in self.csv_data:
             log.info(f'=======Parsing Finding {self.parser_progress+1}=======')
 
-            # checking if current row contains a finding since the csv could have rows that extend beyond finding data
-            if row[csv_finding_title_index] == "":
-                log.warning(f'Row {self.parser_progress+2} in the CSV did not have a value for the finding_title. Skipping...')
+            # process a row if it carries a finding OR an asset; the csv could have rows that
+            # extend beyond finding data, or rows that describe only an asset (e.g. parent detail)
+            has_finding = str(row[csv_finding_title_index]).strip() != ""
+            has_asset = csv_asset_name_index is not None and str(row[csv_asset_name_index]).strip() != ""
+            if not has_finding and not has_asset:
+                log.warning(f'Row {self.parser_progress+2} in the CSV did not have a value for the finding_title or asset_name. Skipping...')
                 self.parser_progress += 1
                 continue
-            
-            vuln_name = row[csv_finding_title_index]
+
+            vuln_name = row[csv_finding_title_index] if has_finding else "(asset-only row)"
             log.info(f'---{vuln_name}---')
             self.parser_row(row)
 
@@ -2105,6 +2223,15 @@ class CSVParser():
 
         # creates and export a ptrac for each report parsed
         log.info(f'---Creating ptrac---')
+
+        # consolidation pass - fold each duplicate's detail into its original so that detail
+        # from asset-only rows (which were never attached to a finding) reaches the original asset
+        # (and therefore any asset that references it as a parent)
+        for asset in self.assets.values():
+            original_sid = asset.get('original_asset_sid')
+            if original_sid is not None and original_sid in self.assets:
+                self.update_asset_list_fields(self.assets[original_sid], asset)
+
         # clients
         for client in self.clients.values():
             client_info = deepcopy(client)
@@ -2117,6 +2244,7 @@ class CSVParser():
             # reports
             for report_sid in client['reports']:
                 report_assets = {} # this list is created here, but needs to be populated when looping through the affected assets
+                report_evidence = [] # report-level evidence array, populated when looping through the affected assets
 
                 report = deepcopy(self.reports[report_sid])
                 report_info = deepcopy(report)
@@ -2182,96 +2310,99 @@ class CSVParser():
                     ]
 
                     # affected assets
+                    # asset_sid is the ROW's asset (keeps the link to this row's affected fields);
+                    # current_asset is the deduped identity (the original asset when the row is a duplicate)
                     for asset_sid in finding['assets']:
-                        # get a copy of the asset, checking duplicates and getting the original asset
                         asset = deepcopy(self.assets[asset_sid])
-                        asset_sid_str = f'{asset["sid"]}'
+                        current_asset = deepcopy(asset)
+                        current_asset_sid_str = f'{current_asset["sid"]}'
                         if asset['original_asset_sid'] != None:
-                            og_asset = self.assets[asset['original_asset_sid']]
-                            self.update_asset_list_fields(og_asset, asset)
-                            asset = deepcopy(og_asset)
-                            asset_sid_str = f'{asset["sid"]}'
-
-
-                            # update ReportAssets og asset reference in ptrac
-
-
-                            # update og asset for the future when added to ptrac as affected asset core
-                            # update instances of og asset already saved in ptrac
-
-
-
-                            # log.info(f'Found existing asset <{asset["asset"]}>')
-                            # # purposely not making a copy we need to update original asset list fields with new entries
-                            # og_asset = self.assets[asset['original_asset_sid']]
-                            # # update og asset - OS, known IPs, tags, and ports
-                            # utils.merge_sanitized_str_lists(og_asset['operating_system'], asset['operating_system'])
-                            # utils.merge_sanitized_str_lists(og_asset['knownIps'], asset['knownIps'])
-                            # utils.merge_sanitized_str_lists(og_asset['tags'], asset['tags'])
-                            # for port_id, port_data in asset['ports'].items():
-                            #     if port_id not in og_asset['ports']:
-                            #         og_asset['ports'][port_id] = port_data
-                            # # update asset that was previously created
-                            # payload = deepcopy(og_asset)
-                            # payload.pop("sid")
-                            # payload.pop("client_sid")
-                            # payload.pop("finding_sid")
-                            # payload.pop("dup_num")
-                            # payload.pop("is_multi")
-                            # log.info(f'Updating client asset <{payload["asset"]}>')
-                            # response = api._v1.assets.update_asset(auth.base_url, auth.get_auth_headers(), client_id, og_asset['asset_id'], payload)
-                            # if response.json.get("message") != "success":
-                            #     log.warning(f'Could not update asset in PT with additional data. Skipping')
-                            # # update this duplicate asset to point to the same asset_id that as assigned by PT when the og asset was created
-                            # asset['asset_id'] = og_asset.get('asset_id', None)
-                            # continue
+                            # duplicate name -> use the original asset as the identity in the ptrac
+                            original_asset = self.assets[asset['original_asset_sid']]   # live reference, not a copy
+                            self.update_asset_list_fields(original_asset, asset)
+                            current_asset = deepcopy(original_asset)
+                            current_asset_sid_str = f'{current_asset["sid"]}'
 
                         # create a copy for the ReportAssets that will be modified to match ptrac specifications
-                        client_asset_info = deepcopy(asset)
-                        client_asset_info.pop("sid")
-                        client_asset_info.pop("client_sid")
-                        client_asset_info.pop("finding_sid")
-                        client_asset_info.pop("original_asset_sid")
-                        client_asset_info.pop("dup_num")
-                        client_asset_info.pop("is_multi")
+                        client_asset_info = deepcopy(current_asset)
+                        for key in ("sid", "client_sid", "finding_sid", "original_asset_sid", "dup_num", "is_multi"):
+                            client_asset_info.pop(key, None)
                         # when the script creates assets through the api asset's ID is saved to the asset_id property on an asset in parsed asset list. used for later deduplication
                         # removing `asset_id` here instead of reworking the api creation section
                         # the second parameter of None prevents the .pop from throwing an error if the asset_id was never added due to failed creation attempt
                         client_asset_info.pop("asset_id", None)
-                        client_asset_info['id'] = asset_sid_str
-                        client_asset_info['parent_asset'] = None
+                        parent_asset_sid = client_asset_info.pop("parent_asset_sid", None)
+                        client_asset_info['id'] = current_asset_sid_str
+                        # parent_asset must carry a real id link (a key in ReportAssets), never an in-memory-only sid
+                        client_asset_info['parent_asset'] = f'{parent_asset_sid}' if parent_asset_sid is not None else None
 
-                        if asset_sid_str not in list(report_assets.keys()):
+                        if current_asset_sid_str not in list(report_assets.keys()):
                             # add client asset to ReportAssets
-                            report_assets[asset_sid_str] = client_asset_info
+                            report_assets[current_asset_sid_str] = client_asset_info
                         else:
                             # update ReportAssets reference with possible additional data
-                            existing_report_asset = report_assets[asset_sid_str]
+                            existing_report_asset = report_assets[current_asset_sid_str]
                             self.update_asset_list_fields(existing_report_asset, client_asset_info)
                             # updates affected asset instances that were already saved to the ptrac with possible additional data
                             existing_ptrac_findings = ptrac['flaws_array']
-                            findings_to_update = list(filter(lambda x: asset_sid_str in x['affected_assets'].keys(), existing_ptrac_findings))
+                            findings_to_update = list(filter(lambda x: current_asset_sid_str in x['affected_assets'].keys(), existing_ptrac_findings))
                             for f in findings_to_update:
                                 for asset_id, existing_affected_asset in f['affected_assets'].items():
-                                    if asset_id == asset_sid_str:
+                                    if asset_id == current_asset_sid_str:
                                         self.update_asset_list_fields(existing_affected_asset, client_asset_info, update_ports=False)
-                        
+
                         # create a copy of the client asset and modify to create and add the affected asset following the ptrac schema
+                        # pass the ROW's asset_sid (not current_asset's) so this row's affected fields are resolved
                         affected_asset_info = deepcopy(client_asset_info)
-                        finding_info = self.add_asset_to_finding(finding_info, affected_asset_info, finding_sid, asset["sid"])
+                        finding_info = self.add_asset_to_finding(finding_info, affected_asset_info, finding_sid, asset_sid)
 
                         # update the client asset with open ports
-                        # - the affected ported are stored on the affected asset on a finding record
+                        # - the affected ports are stored on the affected asset on a finding record
                         # - these should be backfilled to the client asset's open ports list
-                        asset_ports = report_assets.get(asset_sid_str, {}).get("ports")
+                        asset_ports = report_assets.get(current_asset_sid_str, {}).get("ports")
                         if asset_ports != None:
                             for k, v in affected_asset_info['ports'].items():
                                 if k not in asset_ports.keys():
                                     asset_ports[k] = v
 
+                        # collect this row's evidence into the report-level array, repointing the
+                        # evidence to the deduped asset id used in the ptrac
+                        try:
+                            affected_fields = self.affected_assets[self.findings[finding_sid]['affected_asset_sid'][asset_sid]]
+                            for evidence in affected_fields['evidence']:
+                                evidence['id'] = str(evidence['id'])
+                                evidence['assets'] = [current_asset_sid_str]
+                                report_evidence.append(evidence)
+                        except KeyError:
+                            log.debug(f"Asset SID '{asset_sid}' has no affected fields on finding '{finding_sid}'. Skipping evidence collection.")
+
+                    # dedup evidence per affected asset (must be done after processing all of the finding's assets)
+                    for affected_asset_info in finding_info['affected_assets'].values():
+                        self.handle_dedup_evidence(affected_asset_info['evidence'], report_evidence)
+
                     ptrac['flaws_array'].append(finding_info)
 
+                # (G4) materialize referenced parents that are not on any finding, resolving the
+                # chain transitively, so every parent_asset id resolves to a real key in ReportAssets
+                assets_by_str_sid = {f'{sid}': a for sid, a in self.assets.items()}
+                parent_queue = [ra['parent_asset'] for ra in report_assets.values() if ra.get('parent_asset')]
+                while parent_queue:
+                    parent_id = parent_queue.pop()
+                    if parent_id in report_assets or parent_id not in assets_by_str_sid:
+                        continue
+                    parent_info = deepcopy(assets_by_str_sid[parent_id])
+                    for key in ("sid", "client_sid", "finding_sid", "original_asset_sid", "dup_num", "is_multi"):
+                        parent_info.pop(key, None)
+                    parent_info.pop("asset_id", None)
+                    grandparent_sid = parent_info.pop("parent_asset_sid", None)
+                    parent_info['id'] = parent_id
+                    parent_info['parent_asset'] = f'{grandparent_sid}' if grandparent_sid is not None else None
+                    report_assets[parent_id] = parent_info
+                    if parent_info['parent_asset']:
+                        parent_queue.append(parent_info['parent_asset'])
+
                 ptrac['summary']['ReportAssets'] = report_assets
+                ptrac['evidence'] = report_evidence
 
                 ptracs.append(ptrac)
 

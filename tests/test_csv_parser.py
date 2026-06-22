@@ -197,14 +197,16 @@ def test_add_asset_to_finding_merges_existing_affected_asset_fields():
         first_asset_sid: {"is_multi": False},
         second_asset_sid: {"is_multi": False},
     }
+    # affected_asset_sid is now a per-asset dict {asset_sid: affected_fields_sid}
     parser.findings = {
-        finding_sid: {"affected_asset_sid": affected_fields_sid}
+        finding_sid: {"affected_asset_sid": {second_asset_sid: affected_fields_sid}}
     }
     parser.affected_assets = {
         affected_fields_sid: {
             "status": "Closed",
             "ports": {443: {"number": "443"}},
             "vulnerableParameters": ["param2"],
+            "evidence": [],
             "notes": "second note",
         }
     }
@@ -291,7 +293,7 @@ def test_generate_ptrac_json_data_returns_ptrac_schema():
             "sid": finding_sid,
             "client_sid": client_sid,
             "report_sid": report_sid,
-            "affected_asset_sid": None,
+            "affected_asset_sid": {},
             "title": "Finding",
             "severity": "High",
             "status": "Open",
@@ -499,3 +501,234 @@ def test_finding_template_includes_cvss4_risk_score_section():
     assert "overall" in cvss4
     assert "vector" in cvss4
     assert "cvss4" not in parser.finding_template["fields"]["scores"]
+
+
+# ---- per-asset affected fields, evidence, parent assets, asset-only rows ----
+# End-to-end coverage driving parse_data() -> generate_ptrac_json_data().
+
+def _run_end_to_end(columns, rows, merge_strategy=None):
+    """
+    Build a parser with an explicit header mapping, parse the rows, and return the generated ptracs.
+
+    :param columns: list of (header, mapping_key) tuples; col_index is assigned by position
+    :param rows: list of CSV value-lists (the header row is NOT included)
+    :param merge_strategy: optional finding/asset merge strategy
+    """
+    mapping = {
+        header: {"header": header, "mapping_key": mapping_key, "col_index": index}
+        for index, (header, mapping_key) in enumerate(columns)
+    }
+    parser = CSVParser(header_mapping=mapping)
+    parser.doc_version = "2.0.0"
+    parser.csv_data = [list(row) for row in rows]
+    if merge_strategy:
+        parser.set_finding_merge_strategy(merge_strategy)
+    assert parser.parse_data() is True
+    return parser.generate_ptrac_json_data()
+
+
+def test_per_asset_location_url_survives_finding_merge():
+    # Bug B: distinct assets on a merged finding must each keep their own affected-asset detail.
+    columns = [
+        ("Title", "finding_title"),
+        ("Asset", "asset_name"),
+        ("URL", "affected_asset_location_url"),
+    ]
+    rows = [
+        ["SQL Injection", "web-1", "http://host/one"],
+        ["SQL Injection", "web-2", "http://host/two"],
+    ]
+
+    ptracs = _run_end_to_end(columns, rows, merge_strategy="user_defined_fields")
+
+    assert len(ptracs) == 1
+    flaws = ptracs[0]["flaws_array"]
+    assert len(flaws) == 1  # the two rows merged into one finding
+    affected_assets = flaws[0]["affected_assets"]
+    assert len(affected_assets) == 2
+    urls_by_name = {aa["asset"]: aa["locationUrl"] for aa in affected_assets.values()}
+    assert urls_by_name == {"web-1": "http://host/one", "web-2": "http://host/two"}
+
+
+def test_evidence_is_written_to_ptrac_and_referenced_by_affected_asset():
+    columns = [
+        ("Title", "finding_title"),
+        ("Asset", "asset_name"),
+        ("Evidence", "affected_asset_evidence"),
+    ]
+    rows = [["XSS", "web-1", "proof of concept"]]
+
+    ptracs = _run_end_to_end(columns, rows)
+
+    report_evidence = ptracs[0]["evidence"]
+    assert len(report_evidence) == 1
+    evidence = report_evidence[0]
+    assert evidence["caption"] == "Evidence"
+    assert evidence["code"] == "proof of concept"
+
+    affected_assets = ptracs[0]["flaws_array"][0]["affected_assets"]
+    assert len(affected_assets) == 1
+    affected_asset = next(iter(affected_assets.values()))
+    # the affected asset carries only a reference id; the object lives in the report-level array
+    assert affected_asset["evidence"] == [evidence["id"]]
+    assert evidence["assets"] == [affected_asset["id"]]
+
+
+def test_evidence_with_shared_caption_and_code_is_deduped():
+    columns = [
+        ("Title", "finding_title"),
+        ("Asset", "asset_name"),
+        ("Evidence", "affected_asset_evidence"),
+    ]
+    rows = [
+        ["XSS", "web-1", "identical proof"],
+        ["XSS", "web-1", "identical proof"],
+    ]
+
+    ptracs = _run_end_to_end(columns, rows, merge_strategy="user_defined_fields")
+
+    flaws = ptracs[0]["flaws_array"]
+    assert len(flaws) == 1
+    affected_assets = flaws[0]["affected_assets"]
+    assert len(affected_assets) == 1  # same asset name -> one affected asset
+    affected_asset = next(iter(affected_assets.values()))
+    assert len(affected_asset["evidence"]) == 1
+    assert len(ptracs[0]["evidence"]) == 1
+    assert affected_asset["evidence"] == [ptracs[0]["evidence"][0]["id"]]
+
+
+def test_referenced_parent_is_materialized_with_real_id_link():
+    columns = [
+        ("Title", "finding_title"),
+        ("Asset", "asset_name"),
+        ("Parent", "parent_asset"),
+    ]
+    rows = [
+        ["Finding A", "web-1", "host"],
+        ["Finding B", "web-2", "host"],
+    ]
+
+    ptracs = _run_end_to_end(columns, rows)
+
+    report_assets = ptracs[0]["summary"]["ReportAssets"]
+    assets_by_name = {ra["asset"]: ra for ra in report_assets.values()}
+    assert set(assets_by_name) == {"web-1", "web-2", "host"}
+
+    host_id = assets_by_name["host"]["id"]
+    assert assets_by_name["host"]["parent_asset"] is None
+    assert assets_by_name["web-1"]["parent_asset"] == host_id
+    assert assets_by_name["web-2"]["parent_asset"] == host_id
+    # the link resolves to a real key in ReportAssets
+    assert host_id in report_assets
+
+
+def test_self_parenting_is_skipped():
+    columns = [
+        ("Title", "finding_title"),
+        ("Asset", "asset_name"),
+        ("Parent", "parent_asset"),
+    ]
+    rows = [["Finding", "host", "host"]]
+
+    ptracs = _run_end_to_end(columns, rows)
+
+    report_assets = ptracs[0]["summary"]["ReportAssets"]
+    assert len(report_assets) == 1
+    host = next(iter(report_assets.values()))
+    assert host["asset"] == "host"
+    assert host["parent_asset"] is None
+
+
+def test_asset_only_row_supplies_detail_to_referenced_parent():
+    columns = [
+        ("Title", "finding_title"),
+        ("Asset", "asset_name"),
+        ("Parent", "parent_asset"),
+        ("OS", "asset_operating_systems"),
+    ]
+    rows = [
+        ["Finding", "web-1", "host", ""],   # child references parent "host"
+        ["", "host", "", "Linux"],          # asset-only row gives "host" its own detail
+    ]
+
+    ptracs = _run_end_to_end(columns, rows)
+
+    # the asset-only row must not create a finding
+    flaws = ptracs[0]["flaws_array"]
+    assert len(flaws) == 1
+    assert flaws[0]["title"] == "Finding"
+
+    report_assets = ptracs[0]["summary"]["ReportAssets"]
+    assets_by_name = {ra["asset"]: ra for ra in report_assets.values()}
+    assert "host" in assets_by_name
+    # detail from the asset-only row reached the materialized parent
+    assert assets_by_name["host"]["operating_system"] == ["Linux"]
+
+
+def test_transitive_parent_chain_resolves_and_ptrac_is_json_serializable():
+    import json
+
+    columns = [
+        ("Title", "finding_title"),
+        ("Asset", "asset_name"),
+        ("Parent", "parent_asset"),
+    ]
+    rows = [
+        ["Finding", "child", "parent"],        # child -> parent
+        ["", "parent", "grandparent"],         # asset-only row links parent -> grandparent
+    ]
+
+    ptracs = _run_end_to_end(columns, rows)
+    report_assets = ptracs[0]["summary"]["ReportAssets"]
+    assets_by_name = {ra["asset"]: ra for ra in report_assets.values()}
+
+    assert set(assets_by_name) == {"child", "parent", "grandparent"}
+    assert assets_by_name["child"]["parent_asset"] == assets_by_name["parent"]["id"]
+    assert assets_by_name["parent"]["parent_asset"] == assets_by_name["grandparent"]["id"]
+    assert assets_by_name["grandparent"]["parent_asset"] is None
+
+    # every parent_asset id resolves to a real key in ReportAssets
+    for ra in report_assets.values():
+        if ra["parent_asset"] is not None:
+            assert ra["parent_asset"] in report_assets
+
+    # the whole ptrac must be JSON-serializable (no stray UUID objects)
+    json.dumps(ptracs[0])
+
+
+def test_multi_name_assets_generate_with_blank_affected_fields():
+    # multi-name assets are never linked in affected_asset_sid; they must hit the blank fallback
+    columns = [
+        ("Title", "finding_title"),
+        ("Assets", "asset_multi_name"),
+    ]
+    rows = [["Open Port", "a, b, c"]]
+
+    ptracs = _run_end_to_end(columns, rows)
+
+    flaws = ptracs[0]["flaws_array"]
+    assert len(flaws) == 1
+    affected_assets = flaws[0]["affected_assets"]
+    assert sorted(aa["asset"] for aa in affected_assets.values()) == ["a", "b", "c"]
+    report_assets = ptracs[0]["summary"]["ReportAssets"]
+    assert sorted(ra["asset"] for ra in report_assets.values()) == ["a", "b", "c"]
+    assert ptracs[0]["evidence"] == []  # no affected fields -> no evidence
+
+
+def test_single_asset_with_fields_coexists_with_multi_name_assets():
+    columns = [
+        ("Title", "finding_title"),
+        ("Asset", "asset_name"),
+        ("URL", "affected_asset_location_url"),
+        ("Multi", "asset_multi_name"),
+    ]
+    rows = [["Finding", "web-1", "http://host/x", "m1, m2"]]
+
+    ptracs = _run_end_to_end(columns, rows)
+
+    affected_by_name = {aa["asset"]: aa for aa in ptracs[0]["flaws_array"][0]["affected_assets"].values()}
+    assert set(affected_by_name) == {"web-1", "m1", "m2"}
+    assert affected_by_name["web-1"]["locationUrl"] == "http://host/x"
+    # multi-name assets fall back to the blank affected-asset template
+    assert affected_by_name["m1"]["locationUrl"] == ""
+    assert affected_by_name["m2"]["locationUrl"] == ""
