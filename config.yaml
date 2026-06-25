@@ -1,14 +1,115 @@
-# instance_url should be Plextrac instance URL i.e. https://example.plextrac.com
-instance_url: 
-username: 
-password: 
+# =============================================================================
+# General CSV Import - configuration file
+# =============================================================================
+#
+# Every option below maps 1:1 to a command-line flag. Any CLI flag can be set
+# here instead of (or in addition to) passing it on the command line.
+#
+# PRECEDENCE (highest wins):
+#   1. CLI flag passed on the command line
+#   2. Value set in this file
+#   3. Built-in hard default
+#
+# Config values are only used for a field when its CLI flag was NOT passed.
+# A CLI flag therefore always overrides whatever is set here.
+#
+# BLANK / OMITTED VALUES ARE SAFE:
+#   Leaving a key blank (or deleting the line entirely) makes the script fall
+#   back to the built-in default for that option. It never forces an empty
+#   value over a CLI flag or coded default. So you can keep only the keys you care about and
+#   leave the rest blank.
+#
+# KEY NAMES:
+#   Use the underscore form of the flag name. For example the flag
+#   --data-file-path is set here as `data_file_path`.
+#
+# BOOLEAN FLAGS:
+#   Write booleans UNQUOTED: `true` or `false`. Do NOT quote them.
+#   A quoted string like "false" is treated as truthy (enabled) - this is a
+#   common mistake. Leave blank or use `false` to keep a flag disabled.
+#
+# =============================================================================
 
-api_version: 
 
+# -----------------------------------------------------------------------------
+# PlexTrac connection (only needed for --import-to-plextrac or template lookup)
+# -----------------------------------------------------------------------------
+
+# instance_url should be the Plextrac instance URL, e.g. https://example.plextrac.com
+instance_url:
+username:
+password:
+
+
+# -----------------------------------------------------------------------------
+# Parser / mapping selection
+# -----------------------------------------------------------------------------
+
+# PlexTrac API version used in generated PTRAC finding metadata.
+# Format: major.minor.patch, e.g. 2.19.0  (required to generate PTRACs)
+api_version:
+
+# Parser mapping type to use. Valid values:
+#   header_mapping       - use a customer header mapping CSV (headers_file_path)
+#   example_csv          - built-in example CSV mapping
+#   example_json         - built-in example JSON mapping
+# Leave blank to auto-select header_mapping when headers_file_path is set.
+type:
+
+# Path to the customer header mapping CSV file (used with header_mapping type).
 headers_file_path: header_mapping.csv
-data_file_path: 
 
-# name of a report template in the Plextrac instance will be added to all reports
-report_template_name: 
-# name of a finding layout in the Plextrac instance will be added to all reports
-findings_layout_name: 
+
+# -----------------------------------------------------------------------------
+# Input data (use ONE of these, not both)
+# -----------------------------------------------------------------------------
+
+# Only set one of data_file_path or data_folder_path.
+data_file_path:
+data_folder_path:
+
+
+# -----------------------------------------------------------------------------
+# Report / finding output options
+# -----------------------------------------------------------------------------
+
+# Optional report name override for custom mappings.
+client_name:
+# Optional report name override for custom mappings.
+report_name:
+
+# Only save or import generated PTRACs whose generated PlexTrac client name
+# exactly matches this value. Distinct from client_name.
+limit_to_client_name:
+
+# Name of a report template in the Plextrac instance to attach to generated
+# PTRAC reports. Requires PlexTrac connection details above for lookup.
+report_template_name:
+# Name of a finding layout in the Plextrac instance to attach to generated
+# PTRAC reports. Requires PlexTrac connection details above for lookup.
+findings_layout_name:
+
+# Optional finding merge strategy. Valid values:
+#   none                 - do not merge findings (default)
+#   title                - merge findings with the same title
+#   user_defined_fields  - merge on user-defined fields
+#   all_fields           - merge on all fields
+finding_merge_strategy:
+
+# Directory for generated PTRAC files. Default: exported_ptracs
+output_dir:
+
+
+# -----------------------------------------------------------------------------
+# Boolean flags (unquoted true / false; blank = false)
+# -----------------------------------------------------------------------------
+
+# Continue PTRAC generation after recoverable template/layout lookup errors.
+force_generate_ptrac: false
+
+# Import generated PTRAC reports into PlexTrac (requires connection details).
+import_to_plextrac: false
+
+# Create missing PlexTrac clients during import instead of skipping those
+# reports. Only relevant when import_to_plextrac is true.
+force_create_clients: false
