@@ -1,0 +1,2 @@
+client_name,report_name,finding_title,description,severity,status,recommendations,references,asset_name,asset_port
+client_name,report_name,finding_title,finding_description,finding_severity,finding_status,finding_recommendations,finding_references,asset_name,affected_asset_port_number

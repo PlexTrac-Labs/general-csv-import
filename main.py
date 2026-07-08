@@ -14,6 +14,7 @@ from utils.auth_handler import Auth
 import utils.input_utils as input
 import utils.general_utils as utils
 import utils.data_utils as data
+import utils.perf_tracker as perf_tracker
 import api
 import mappings
 
@@ -462,15 +463,26 @@ def process_input_file(data_file_path: str, map_type: str, spec, args: argparse.
     apply_template_settings(parser, args)
 
     log.info(f"Processing file '{data_file_path}' with mapping '{map_type}'")
-    loaded_file = spec.load_data_function(data_file_path)
-    if not spec.verify_function(loaded_file):
-        raise ValueError(f"Data file is not valid: {data_file_path}")
 
-    temp_csv = spec.temp_csv_function(loaded_file, parser)
-    # debug: uncomment to write the intermediate mapped CSV (UTF-8) beside the input file
-    # save_temp_csv_for_debug(temp_csv, f"{os.path.splitext(data_file_path)[0]}_temp_mapped.csv")
-    load_parser_mappings_from_data_file(temp_csv, parser)
-    load_data_into_parser(temp_csv, parser)
+    # Opt-in perf/memory tracking (settings.track_performance). No-op when off.
+    tracker = perf_tracker.PerfTracker(
+        enabled=getattr(settings, "track_performance", False),
+        label=os.path.basename(data_file_path),
+        log_path=getattr(settings, "perf_log_file", "logs/perf_run.log"),
+    )
+
+    # Phase 1: ingest input -> mapped temp CSV -> rows loaded into the parser.
+    with tracker.phase("create_temp_csv") as ph:
+        loaded_file = spec.load_data_function(data_file_path)
+        if not spec.verify_function(loaded_file):
+            raise ValueError(f"Data file is not valid: {data_file_path}")
+
+        temp_csv = spec.temp_csv_function(loaded_file, parser)
+        # debug: uncomment to write the intermediate mapped CSV (UTF-8) beside the input file
+        # save_temp_csv_for_debug(temp_csv, f"{os.path.splitext(data_file_path)[0]}_temp_mapped.csv")
+        load_parser_mappings_from_data_file(temp_csv, parser)
+        load_data_into_parser(temp_csv, parser)
+        ph.set_counts(rows=max(0, len(temp_csv) - 1))  # minus header row
 
     finding_merge_strategy = (
         args.finding_merge_strategy
@@ -480,11 +492,33 @@ def process_input_file(data_file_path: str, map_type: str, spec, args: argparse.
     if finding_merge_strategy:
         parser.set_finding_merge_strategy(finding_merge_strategy)
 
-    if not parser.parse_data():
-        raise RuntimeError(f"Parser failed for file: {data_file_path}")
+    # Phase 2: parse rows into in-memory object arrays.
+    with tracker.phase("parse_data") as ph:
+        if not parser.parse_data():
+            raise RuntimeError(f"Parser failed for file: {data_file_path}")
+        ph.set_counts(
+            input_rows=len(parser.csv_data) if parser.csv_data else 0,
+            clients=len(parser.clients),
+            reports=len(parser.reports),
+            findings=len(parser.findings),
+            assets=len(parser.assets),
+            affected_assets=len(parser.affected_assets),
+            evidence=len(parser.evidence),
+            report_media=len(parser.report_media),
+        )
 
     parser.display_parser_results()
-    return parser.generate_ptrac_json_data()
+
+    # Phase 3: build ptrac JSON for each report from the object arrays.
+    with tracker.phase("generate_ptrac_json_data") as ph:
+        ptracs = parser.generate_ptrac_json_data()
+        ph.set_counts(
+            ptracs=len(ptracs),
+            flaws=sum(len(p.get("flaws_array", [])) for p in ptracs),
+        )
+
+    tracker.report()
+    return ptracs
 
 
 def run(args: argparse.Namespace):
