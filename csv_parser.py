@@ -1684,6 +1684,8 @@ class CSVParser():
 
         if mapping['validation_type'] == "SEVERITY":
             # ["Critical", "High", "Medium", "Low", "Informational"]
+            if isinstance(value, str):
+                value = value.strip()
             if value not in self.severities:
                 log.warning(f'Header "{header}" value "{value}" is not a valid severity. Must be in the list ["Critical", "High", "Medium", "Low", "Informational"] Skipping...')
                 return None
@@ -1691,6 +1693,8 @@ class CSVParser():
 
         if mapping['validation_type'] == "STATUS":
             statuses = ["Open", "In Process", "Closed"]
+            if isinstance(value, str):
+                value = value.strip()
             if value not in statuses:
                 log.warning(f'Header "{header}" value "{value}" is not a valid status. Must be in the list ["Open", "In Process", "Closed"] Skipping...')
                 return None
@@ -1698,6 +1702,8 @@ class CSVParser():
 
         if mapping['validation_type'] == "ASSET_TYPE":
             types = ["Workstation", "Server", "Network Device", "Application", "General"]
+            if isinstance(value, str):
+                value = value.strip()
             if value not in types:
                 log.warning(f'Header "{header}" value "{value}" is not a valid asset type. Must be in the list ["Workstation", "Server", "Network Device", "Application", "General"] Skipping...')
                 return None
@@ -1706,6 +1712,8 @@ class CSVParser():
         if mapping['validation_type'] == "PCI_STATUS":
             pass_types = ["Pass", "pass", "Yes", "yes", "y"]
             fail_types = ["Fail", "fail", "No", "no", "n"]
+            if isinstance(value, str):
+                value = value.strip()
             if value in pass_types:
                 value = "pass"
             elif value in fail_types:
@@ -2308,6 +2316,16 @@ class CSVParser():
                         finding_info['closedAt'] = None
                     if finding_info.get("last_update") == None:
                         finding_info['last_update'] = self.parser_time_milliseconds
+                    # scores - drop any unpopulated score object (only a 'type' identifier, no
+                    # calculation/value/label); if none remain, remove scores from fields entirely
+                    scores = finding_info.get('fields', {}).get('scores')
+                    if isinstance(scores, dict):
+                        for score_key in list(scores.keys()):
+                            score = scores[score_key]
+                            if not any(str(v).strip() for k, v in score.items() if k != "type"):
+                                scores.pop(score_key)
+                        if not scores:
+                            finding_info['fields'].pop('scores')
                     # sev
                     finding_info['sev'] = self.severities.index(finding_info['severity'])
                     # assignedTo
