@@ -56,19 +56,19 @@ you pass is locked; the solver fills in the rest to hit --rows.
 Examples
 --------
   # Auto-shape 1M rows (balanced), write grouped CSV
-  python scripts/perf_memory_testing/generate_test_csv.py --rows 1_000_000 -o testing_files/perf/data_1m.csv
+  python scripts/perf_memory_testing/generate_test_csv.py --rows 1_000_000 -o data/testing_files/perf/data_1m.csv
 
   # Same volume but scatter reports so every ptrac stays open (max memory)
   python scripts/perf_memory_testing/generate_test_csv.py --rows 1_000_000 --layout interleaved \
-      -o testing_files/perf/data_1m_il.csv
+      -o data/testing_files/perf/data_1m_il.csv
 
   # Pin the shape explicitly (your worked example)
   python scripts/perf_memory_testing/generate_test_csv.py --clients 10 --reports-per-client 25 \
-      --findings-per-report 100 --assets-per-finding 4 -o testing_files/perf/data.csv
+      --findings-per-report 100 --assets-per-finding 4 -o data/testing_files/perf/data.csv
 
   # Cap by size: stop at ~2 GB, pad rows to widen them
   python scripts/perf_memory_testing/generate_test_csv.py --rows 15_000_000 --target-size-mb 2048 \
-      --pad-bytes 300 -o testing_files/perf/data_2gb.csv
+      --pad-bytes 300 -o data/testing_files/perf/data_2gb.csv
 """
 
 import argparse
@@ -265,7 +265,7 @@ def main(argv=None):
                    help="Target data rows. The solver shapes the hierarchy to hit this.")
     p.add_argument("--auto", choices=["balanced", "linear"], default="balanced",
                    help="balanced: grow C,R,F,A together. linear: grow only clients.")
-    p.add_argument("--output", "-o", default="testing_files/perf/generated_test.csv",
+    p.add_argument("--output", "-o", default="data/testing_files/perf/generated_test.csv",
                    help="Output CSV path. Parent dirs are created if missing.")
 
     # Dimension pins (any provided value is locked; the solver fills the rest).

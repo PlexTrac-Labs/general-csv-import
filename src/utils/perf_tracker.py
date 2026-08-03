@@ -46,6 +46,8 @@ import threading
 import time
 from contextlib import contextmanager
 
+import paths
+
 
 # --------------------------------------------------------------------------- #
 # Low-overhead, dependency-free RSS reader (resolved once at import).
@@ -191,7 +193,7 @@ _THROUGHPUT_KEYS = ("input_rows", "rows", "findings", "ptracs")
 
 
 class PerfTracker:
-    def __init__(self, enabled=False, label="", log_path="logs/perf_run.log",
+    def __init__(self, enabled=False, label="", log_path=None,
                  sample_interval=0.1, heartbeat=5.0):
         """
         :param enabled: master switch; when False all methods are no-ops
@@ -202,7 +204,7 @@ class PerfTracker:
         """
         self.enabled = bool(enabled)
         self.label = label
-        self.log_path = log_path
+        self.log_path = log_path if log_path is not None else str(paths.LOGS_DIR / "perf_run.log")
         self.sample_interval = sample_interval
         self.heartbeat = heartbeat
         self.records = []

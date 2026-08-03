@@ -8,6 +8,18 @@ import mappings
 import utils.input_utils as input_utils
 
 
+@pytest.fixture(autouse=True)
+def _isolate_config(tmp_path_factory, monkeypatch):
+    """Keep the developer's real src/config.yaml out of the tests.
+
+    Config is now resolved against paths.CONFIG_FILE (src/config.yaml) rather than
+    the current working directory, so point it at a nonexistent file by default.
+    Tests that need config values set paths.CONFIG_FILE to their own fixture file.
+    """
+    missing = tmp_path_factory.mktemp("cfg") / "config.yaml"
+    monkeypatch.setattr(main.paths, "CONFIG_FILE", missing)
+
+
 def test_argument_parser_uses_config_defaults(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text(
@@ -15,7 +27,7 @@ def test_argument_parser_uses_config_defaults(tmp_path, monkeypatch):
         "headers_file_path: header_mapping.csv\n"
         "api_version: 3.1.0\n"
     )
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main.paths, "CONFIG_FILE", config)
 
     args = main.parse_args([])
 
@@ -31,7 +43,7 @@ def test_argument_parser_cli_values_override_config(tmp_path, monkeypatch):
         "headers_file_path: config-mapping.csv\n"
         "api_version: 3.1.0\n"
     )
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main.paths, "CONFIG_FILE", config)
 
     args = main.parse_args([
         "--data-file-path", "cli-data.csv",
@@ -55,7 +67,7 @@ def test_argument_parser_does_not_accept_input_alias(tmp_path, monkeypatch):
 def test_argument_parser_uses_data_folder_path_config_default(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text("data_folder_path: input_files/group\n")
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main.paths, "CONFIG_FILE", config)
 
     args = main.parse_args([])
 
@@ -78,7 +90,7 @@ def test_argument_parser_preserves_both_file_and_folder_until_execution(tmp_path
 def test_argument_parser_accepts_template_and_layout(tmp_path, monkeypatch):
     config = tmp_path / "config.yaml"
     config.write_text("findings_layout_name: Config Layout\n")
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(main.paths, "CONFIG_FILE", config)
 
     args = main.parse_args([
         "--report-template-name", "CLI Template",

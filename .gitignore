@@ -4,8 +4,9 @@ __pycache__/
 .pytest_cache/
 *_temp_mapped.csv
 
-exported_ptracs/
-failed_ptracs/
-testing_files/
-input_files/
+# Consolidated runtime I/O (see data/ and paths.py)
+data/exported_ptracs/
+data/failed_ptracs/
+data/testing_files/
+data/input_files/
 logs/

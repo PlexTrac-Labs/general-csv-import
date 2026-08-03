@@ -4,6 +4,7 @@ import os
 os.system("")  # enables ansi escape characters in windows terminals
 import re
 
+import paths
 import settings
 
 # logging settings - these setting should be defined in setting.py - these default values are used if this file is missing
@@ -86,11 +87,8 @@ class LogFormatHandler():
     A class to act as an interface to the python logger and handle adding font colors depending on log level
     """
     def __init__(self, stream_level, file_level=logging.WARN, output_to_file=False):
-        try:
-            os.mkdir("logs")
-        except FileExistsError as e:
-            pass
-        self.LOGS_FILE_PATH = f'logs/log_{time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(time.time()))}.txt'
+        os.makedirs(paths.LOGS_DIR, exist_ok=True)
+        self.LOGS_FILE_PATH = str(paths.LOGS_DIR / f'log_{time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(time.time()))}.txt')
 
         lger = logging.getLogger()
         lger.setLevel(logging.DEBUG) # do not change - logging level set individually below

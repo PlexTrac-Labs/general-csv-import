@@ -8,6 +8,7 @@ import yaml
 
 import utils.log_handler as logger
 log = logger.log
+import paths
 import settings
 from csv_parser import CSVParser
 from utils.auth_handler import Auth
@@ -18,10 +19,12 @@ import utils.perf_tracker as perf_tracker
 import api
 import mappings
 
-MISSING_CLIENTS_FILE_NAME = os.path.join("logs", "missing_plextrac_clients.txt")
+MISSING_CLIENTS_FILE_NAME = str(paths.LOGS_DIR / "missing_plextrac_clients.txt")
 
 
-def load_config_defaults(config_path: str = "config.yaml") -> dict:
+def load_config_defaults(config_path: str = None) -> dict:
+    if config_path is None:
+        config_path = str(paths.CONFIG_FILE)
     if not os.path.exists(config_path):
         return {}
     with open(config_path, "r", encoding="utf-8") as config_file:
@@ -148,7 +151,7 @@ def apply_config_defaults(args: argparse.Namespace, config: Optional[dict] = Non
         "report_template_name": "",
         "findings_layout_name": "",
         "finding_merge_strategy": "none",
-        "output_dir": "exported_ptracs",
+        "output_dir": str(paths.DATA_DIR / "exported_ptracs"),
         "instance_url": "",
         "username": "",
         "password": "",
@@ -281,7 +284,7 @@ def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
         if not client_name or not report_name:
             log.error("Generated PTRAC is missing client or report name. Skipping...")
             failed_reports.append(f"Client: {client_name} | Report: {report_name}")
-            utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+            utils.save_json_as_ptrac_file(ptrac, folder_path=str(paths.DATA_DIR / "failed_ptracs"))
             continue
 
         matching_clients = [client for client in clients if client_name == client["name"]]
@@ -290,7 +293,7 @@ def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
                 log.error(f"Mapped client name '{client_name}' does not exist in PlexTrac. Skipping...")
                 failed_reports.append(f"Client: {client_name} | Report: {report_name}")
                 missing_client_names.append(client_name)
-                utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+                utils.save_json_as_ptrac_file(ptrac, folder_path=str(paths.DATA_DIR / "failed_ptracs"))
                 continue
 
             try:
@@ -304,14 +307,14 @@ def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
                 log.error(f"Could not create missing PlexTrac client '{client_name}'. Skipping report '{report_name}'...\n{e}")
                 failed_reports.append(f"Client: {client_name} | Report: {report_name}")
                 missing_client_names.append(client_name)
-                utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+                utils.save_json_as_ptrac_file(ptrac, folder_path=str(paths.DATA_DIR / "failed_ptracs"))
                 continue
 
         client_id = matching_clients[0]["client_id"]
         if report_name in report_names_by_client_id.get(client_id, []):
             log.warning(f"Report '{report_name}' already exists under client '{client_name}'. Skipping...")
             failed_reports.append(f"Client: {client_name} | Report: {report_name}")
-            utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+            utils.save_json_as_ptrac_file(ptrac, folder_path=str(paths.DATA_DIR / "failed_ptracs"))
             continue
 
         try:
@@ -325,7 +328,7 @@ def import_ptracs_to_plextrac(ptracs: list, args: argparse.Namespace) -> None:
         except Exception as e:
             log.error(f"Could not import report '{report_name}'. Skipping...\n{e}")
             failed_reports.append(f"Client: {client_name} | Report: {report_name}")
-            utils.save_json_as_ptrac_file(ptrac, folder_path="failed_ptracs")
+            utils.save_json_as_ptrac_file(ptrac, folder_path=str(paths.DATA_DIR / "failed_ptracs"))
 
     write_missing_clients_file(missing_client_names)
     if failed_reports:
@@ -475,7 +478,7 @@ def process_input_file(data_file_path: str, map_type: str, spec, args: argparse.
     tracker = perf_tracker.PerfTracker(
         enabled=getattr(settings, "track_performance", False),
         label=os.path.basename(data_file_path),
-        log_path=getattr(settings, "perf_log_file", "logs/perf_run.log"),
+        log_path=getattr(settings, "perf_log_file", str(paths.LOGS_DIR / "perf_run.log")),
     )
 
     # Phase 1: ingest input -> mapped temp CSV -> rows loaded into the parser.

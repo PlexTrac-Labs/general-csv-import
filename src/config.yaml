@@ -57,7 +57,7 @@ api_version:
 type:
 
 # Path to the customer header mapping CSV file (used with header_mapping type).
-headers_file_path: header_mapping.csv
+headers_file_path:
 
 
 # -----------------------------------------------------------------------------

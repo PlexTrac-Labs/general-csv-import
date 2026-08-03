@@ -1,8 +1,10 @@
 import logging
 
+import paths
+
 
 # LOGGING
-console_log_level = logging.INFO
+console_log_level = logging.DEBUG
 file_log_level = logging.INFO
 save_logs_to_file = True
 
@@ -20,7 +22,7 @@ track_performance = False
 # Dedicated file for the perf tracker output (kept separate from the normal logs
 # and the console). Tail this file in another terminal to watch perf output live
 # while the script's usual INFO logs stream to the console as normal.
-perf_log_file = "logs/perf_run.log"
+perf_log_file = str(paths.LOGS_DIR / "perf_run.log")
 
 # REQUESTS
 # if the Plextrac instance is running on https without valid certs, requests will respond with cert error

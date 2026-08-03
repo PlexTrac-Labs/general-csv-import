@@ -8,6 +8,7 @@ import os
 
 from cvss import CVSS3, CVSS4, CVSSError
 
+import paths
 import utils.log_handler as logger
 log = logger.log
 
@@ -381,7 +382,7 @@ def increment_file_name(file_name, existing_files):
     return base_name
 
 
-def save_json_as_ptrac_file(ptrac_data: dict, file_name: str = "", folder_path: str = "exported_ptracs") -> None:
+def save_json_as_ptrac_file(ptrac_data: dict, file_name: str = "", folder_path: str = None) -> None:
     """
     Save a PTRAC JSON dictionary to a .ptrac file.
     """
@@ -393,10 +394,10 @@ def save_json_as_ptrac_file(ptrac_data: dict, file_name: str = "", folder_path: 
         timestamp = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(time.time()))
         export_name = f'{client_name}_{report_name}_{timestamp}'
 
-    try:
-        os.mkdir(folder_path)
-    except FileExistsError:
-        pass
+    if folder_path is None:
+        folder_path = str(paths.DATA_DIR / "exported_ptracs")
+
+    os.makedirs(folder_path, exist_ok=True)
 
     existing_files = [os.path.splitext(file)[0] for file in os.listdir(folder_path)]
     export_file_name = increment_file_name(export_name, existing_files)
