@@ -12,6 +12,7 @@ python-dateutil = "*"
 pyyaml = "*"
 xmltodict = "*"
 textile = "*"
+markdown = "*"
 cvss = "*"
 
 [requires]

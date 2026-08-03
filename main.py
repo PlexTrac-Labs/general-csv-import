@@ -452,7 +452,7 @@ def process_input_file(data_file_path: str, map_type: str, spec, args: argparse.
     Process a single input file end-to-end and return its generated PTRAC data.
     """
     parser = CSVParser(header_mapping=spec.mapping)
-    parser.enable_rich_text_processing = getattr(spec, "enable_rich_text_processing", False)
+    parser.rich_text_source_format = getattr(spec, "rich_text_source_format", None)
     handle_load_api_version(args.api_version, parser)
 
     # need to generate mapping from header file after spec is resolved and parser created for easier access to parser mapping keys

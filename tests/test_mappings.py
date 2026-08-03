@@ -151,7 +151,7 @@ def test_resolve_returns_example_dradis_csv_spec():
     assert spec.temp_csv_function is mappings.create_temp_data_csv_example_dradis_csv
     assert spec.find_input_files_function is mappings.find_input_files_dradis_pair
     assert spec.default_finding_merge_strategy is None
-    assert spec.enable_rich_text_processing is True
+    assert spec.rich_text_source_format == "textile"
 
 
 def test_resolve_returns_example_dradis_zip_spec():
@@ -163,7 +163,7 @@ def test_resolve_returns_example_dradis_zip_spec():
     assert spec.temp_csv_function is mappings.create_temp_data_csv_example_dradis_zip
     assert spec.find_input_files_function is mappings.find_input_files_dradis_zip
     assert spec.default_finding_merge_strategy == "user_defined_fields"
-    assert spec.enable_rich_text_processing is True
+    assert spec.rich_text_source_format == "textile"
 
 
 def test_verify_example_dradis_csv_payload_requires_headers_rows_nodes_and_blocks():

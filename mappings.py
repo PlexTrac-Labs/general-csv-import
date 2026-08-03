@@ -947,7 +947,7 @@ class _MapSpec:
         "temp_csv_function",
         "find_input_files_function",
         "default_finding_merge_strategy",
-        "enable_rich_text_processing",
+        "rich_text_source_format",
     )
 
     def __init__(
@@ -958,7 +958,7 @@ class _MapSpec:
         temp_csv_function,
         find_input_files_function,
         default_finding_merge_strategy=None,
-        enable_rich_text_processing=False,
+        rich_text_source_format=None,
     ):
         self.mapping = mapping
         self.load_data_function = load_data_function
@@ -966,7 +966,10 @@ class _MapSpec:
         self.temp_csv_function = temp_csv_function
         self.find_input_files_function = find_input_files_function
         self.default_finding_merge_strategy = default_finding_merge_strategy
-        self.enable_rich_text_processing = enable_rich_text_processing
+        # declared source format of this source's rich-text fields (plain /
+        # markdown / textile / html, see utils.rich_text_utils.SUPPORTED_FORMATS).
+        # None leaves rich text untouched.
+        self.rich_text_source_format = rich_text_source_format
 
 EXAMPLE_CSV = _MapSpec(
     mapping=example_csv_template_mapping,
@@ -998,7 +1001,7 @@ EXAMPLE_DRADIS_CSV = _MapSpec(
     verify_function=verify_example_dradis_csv_payload,
     temp_csv_function=create_temp_data_csv_example_dradis_csv,
     find_input_files_function=find_input_files_dradis_pair,
-    enable_rich_text_processing=True,
+    rich_text_source_format="textile",
 )
 
 EXAMPLE_DRADIS_ZIP = _MapSpec(
@@ -1008,7 +1011,7 @@ EXAMPLE_DRADIS_ZIP = _MapSpec(
     temp_csv_function=create_temp_data_csv_example_dradis_zip,
     find_input_files_function=find_input_files_dradis_zip,
     default_finding_merge_strategy="user_defined_fields",
-    enable_rich_text_processing=True,
+    rich_text_source_format="textile",
 )
 
 def resolve(map_type_str: str) -> _MapSpec:

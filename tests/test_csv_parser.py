@@ -334,7 +334,7 @@ def test_parser_initializes_report_media_state():
     assert parser.report_media == {}
     assert parser.report_media_lookup == {}
     assert parser.zip_file_path is None
-    assert parser.enable_rich_text_processing is False
+    assert parser.rich_text_source_format is None
 
 
 def test_rich_text_processing_is_disabled_by_default():
@@ -345,7 +345,7 @@ def test_rich_text_processing_is_disabled_by_default():
 
 
 def test_rich_text_processing_can_be_enabled_for_dradis_values():
-    parser = CSVParser(enable_rich_text_processing=True)
+    parser = CSVParser(rich_text_source_format="textile")
 
     result = parser.format_rich_text_value("*bold*", "description")
 
@@ -354,7 +354,7 @@ def test_rich_text_processing_can_be_enabled_for_dradis_values():
 
 
 def test_dradis_placeholder_angle_brackets_are_escaped_in_narratives():
-    parser = CSVParser(enable_rich_text_processing=True)
+    parser = CSVParser(rich_text_source_format="textile")
 
     result = parser.format_rich_text_value("Contains <dradis.placeholder> token", "Executive Summary")
 
@@ -363,7 +363,7 @@ def test_dradis_placeholder_angle_brackets_are_escaped_in_narratives():
 
 
 def test_add_image_returns_missing_placeholder_without_zip():
-    parser = CSVParser(enable_rich_text_processing=True)
+    parser = CSVParser(rich_text_source_format="textile")
 
     marker = "!/pro/projects/1/nodes/2/attachments/login.png!"
     result = parser.add_image(marker, "description")
@@ -373,7 +373,7 @@ def test_add_image_returns_missing_placeholder_without_zip():
 
 
 def test_add_image_extracts_zip_image_bytes_into_report_media(tmp_path):
-    parser = CSVParser(enable_rich_text_processing=True)
+    parser = CSVParser(rich_text_source_format="textile")
     parser.zip_file_path = _make_zip_with_image(tmp_path, "2", "login.png")
 
     marker = "!/pro/projects/1/nodes/2/attachments/login.png!"
@@ -386,7 +386,7 @@ def test_add_image_extracts_zip_image_bytes_into_report_media(tmp_path):
 
 
 def test_add_image_ignores_display_metadata_when_matching_images(tmp_path):
-    parser = CSVParser(enable_rich_text_processing=True)
+    parser = CSVParser(rich_text_source_format="textile")
     parser.zip_file_path = _make_zip_with_image(tmp_path, "2", "login.png")
 
     value = (
@@ -400,7 +400,7 @@ def test_add_image_ignores_display_metadata_when_matching_images(tmp_path):
 
 
 def test_add_image_caption_becomes_figure_with_figcaption(tmp_path):
-    parser = CSVParser(enable_rich_text_processing=True)
+    parser = CSVParser(rich_text_source_format="textile")
     parser.zip_file_path = _make_zip_with_image(tmp_path, "2", "login.png")
 
     marker = "!/pro/projects/1/nodes/2/attachments/login.png(The login page)!"
@@ -411,7 +411,7 @@ def test_add_image_caption_becomes_figure_with_figcaption(tmp_path):
 
 
 def test_add_image_blank_caption_uses_plain_img_tag(tmp_path):
-    parser = CSVParser(enable_rich_text_processing=True)
+    parser = CSVParser(rich_text_source_format="textile")
     parser.zip_file_path = _make_zip_with_image(tmp_path, "2", "login.png")
 
     marker = "!/pro/projects/1/nodes/2/attachments/login.png!"

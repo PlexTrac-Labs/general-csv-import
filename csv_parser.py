@@ -10,6 +10,7 @@ import zipfile
 import utils.log_handler as logger
 log = logger.log
 import utils.general_utils as utils
+import utils.rich_text_utils as rich_text_utils
 import mapping_utils.dradis_utils as dradis
 
 
@@ -95,7 +96,8 @@ class CSVParser():
             'data_type' : 'CUSTOM_FIELD',
             'validation_type': 'STR',
             'input_blanks': True,
-            'path': ['custom_field', 'INDEX']
+            'path': ['custom_field', 'INDEX'],
+            'rich_text': True
         },
         # REPORT INFO
         'report_name': {
@@ -152,7 +154,8 @@ class CSVParser():
             'data_type' : 'NARRATIVE',
             'validation_type': None,
             'input_blanks': True,
-            'path': ['exec_summary', 'custom_fields', 'INDEX']
+            'path': ['exec_summary', 'custom_fields', 'INDEX'],
+            'rich_text': True,
         },
         # FINDING INFO
         'finding_assigned_to': {
@@ -205,6 +208,7 @@ class CSVParser():
             'path': ['description'],
             'merge_type': 'RICH_TEXT',
             'merge_override': None,
+            'rich_text': True,
         },
         'finding_recommendations': {
             'id': 'finding_recommendations',
@@ -215,6 +219,7 @@ class CSVParser():
             'path': ['recommendations'],
             'merge_type': 'RICH_TEXT',
             'merge_override': None,
+            'rich_text': True,
         },
         'finding_references': {
             'id': 'finding_references',
@@ -225,6 +230,7 @@ class CSVParser():
             'path': ['references'],
             'merge_type': 'RICH_TEXT',
             'merge_override': None,
+            'rich_text': True,
         },
         'finding_severity': {
             'id': 'finding_severity',
@@ -295,6 +301,7 @@ class CSVParser():
             'path': ['fields'],
             'merge_type': 'RICH_TEXT',
             'merge_override': None,
+            'rich_text': True,
         },
         # cvss scores
         'finding_cvss4_overall': {
@@ -480,7 +487,8 @@ class CSVParser():
             'data_type' : 'KEY_CUSTOM_FIELD',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['fields']
+            'path': ['fields'],
+            'rich_text': True,
         },
         'asset_type': {
             'id': 'asset_type',
@@ -600,7 +608,8 @@ class CSVParser():
             'data_type' : 'DETAIL',
             'validation_type': None,
             'input_blanks': False,
-            'path': ['description']
+            'path': ['description'],
+            'rich_text': True,
         },
         'asset_known_ips': {
             'id': 'asset_known_ips',
@@ -871,7 +880,7 @@ class CSVParser():
     #--- END Asset---
 
 
-    def __init__(self, header_mapping=None, enable_rich_text_processing: bool = False):
+    def __init__(self, header_mapping=None, rich_text_source_format: str = None):
         """
         
         """
@@ -893,10 +902,14 @@ class CSVParser():
         self.finding_merge_sid_map = {}
         self.asset_merge_strategy = None
 
-        # Dradis (and other ZIP-paired sources) rich-text support. Disabled by
-        # default so plain CSV/JSON imports keep their original text untouched.
+        # Rich-text support. ``rich_text_source_format`` is the declared source
+        # format of this import's rich-text fields (plain / markdown / textile /
+        # html, see utils.rich_text_utils.SUPPORTED_FORMATS). None disables all
+        # rich-text processing so plain CSV/JSON imports keep their text
+        # untouched. zip_file_path is set by ZIP-paired sources (Dradis) for
+        # image loading.
         self.zip_file_path = None
-        self.enable_rich_text_processing = enable_rich_text_processing
+        self.rich_text_source_format = rich_text_source_format
 
         self.client_template = deepcopy(self.client_template_mock)
         self.report_template = deepcopy(self.report_template_mock)
@@ -1907,19 +1920,27 @@ class CSVParser():
         return new_value, image_placeholders
 
     def format_rich_text_value(self, value, header):
-        if not self.enable_rich_text_processing:
+        """
+        Convert and sanitize a rich-text value into exporter-safe CKE HTML.
+
+        No-op unless a source format is declared for this import. Dradis image
+        markers are shielded as placeholders across conversion, restored, and
+        then carried through sanitization (so restored ``<img>`` tags are also
+        normalized) - matching the original convert -> restore -> sanitize order.
+        """
+        if self.rich_text_source_format is None:
             return value
         new_value, image_placeholders = self.replace_images_with_placeholders(value, header)
-        new_value = utils.convert_textile_to_html(new_value)
+        new_value = rich_text_utils.convert_to_cke_html(new_value, self.rich_text_source_format)
         for placeholder, image_tag in image_placeholders.items():
             new_value = new_value.replace(placeholder, image_tag)
-        new_value = utils.strip_extra_lines(new_value, header)
+        new_value = rich_text_utils.sanitize_cke_html(new_value)
         return new_value
 
     # detail
     def add_detail(self, header, obj, mapping, value):
         path = mapping['path']
-        if mapping['id'] in ["client_description", "finding_description", "finding_recommendations", "finding_references", "asset_description"]:
+        if mapping.get('rich_text'):
             value = self.format_rich_text_value(value, header)
         self.set_value(obj, path, value)
 
@@ -1935,7 +1956,8 @@ class CSVParser():
     # keyed custom field (findings and assets - both stored as a key/value map under 'fields')
     def add_custom_field(self, header, obj, mapping, value):
         key = utils.format_key(header.strip())
-        value = self.format_rich_text_value(value, header)
+        if mapping.get('rich_text'):
+            value = self.format_rich_text_value(value, header)
         # Reuse metadata when a later column normalizes to the same field key.
         # The latest label/value wins, but cuid and sort order stay stable.
         existing_field = obj.get(mapping['path'][0], {}).get(key, {})
@@ -1966,7 +1988,8 @@ class CSVParser():
 
     # report narrative
     def add_label_text(self, header, obj, mapping, value):
-        value = self.format_rich_text_value(value, header)
+        if mapping.get('rich_text'):
+            value = self.format_rich_text_value(value, header)
 
         label_text = {
             'label': header.strip(),
@@ -2159,15 +2182,15 @@ class CSVParser():
             finding_sid, finding_name = self.handle_finding(row, client_sid, report_sid)
 
         self.handle_multi_asset(row, client_sid, finding_sid)
-        log.debug(f'After MULTI asset call, asset list:')
-        for asset in self.assets.values():
-            log.debug(f'SID: {asset["sid"]} - Name: {asset["asset"]} - Dup num: {asset["dup_num"]} - OG SID: {asset["original_asset_sid"]}')
+        # log.debug(f'After MULTI asset call, asset list:')
+        # for asset in self.assets.values():
+        #     log.debug(f'SID: {asset["sid"]} - Name: {asset["asset"]} - Dup num: {asset["dup_num"]} - OG SID: {asset["original_asset_sid"]}')
 
         # query csv row for asset specific data and create or choose asset
         asset_sid, asset_name = self.handle_asset(row, client_sid, finding_sid)
-        log.debug(f'After SINGLE asset call, asset list:')
-        for asset in self.assets.values():
-            log.debug(f'SID: {asset["sid"]} - Name: {asset["asset"]} - Dup num: {asset["dup_num"]} - OG SID: {asset["original_asset_sid"]}')
+        # log.debug(f'After SINGLE asset call, asset list:')
+        # for asset in self.assets.values():
+        #     log.debug(f'SID: {asset["sid"]} - Name: {asset["asset"]} - Dup num: {asset["dup_num"]} - OG SID: {asset["original_asset_sid"]}')
 
         # if there was a header mapped to a single asset, handle the potential affected asset data for the single asset
         if finding_sid != None and asset_sid != None:
