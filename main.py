@@ -111,6 +111,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional finding merge strategy.",
     )
+    parser.add_argument(
+        "--override-finding-status-from-assets",
+        action="store_true",
+        default=None,
+        help="When both finding status and affected asset status are mapped, always derive the finding status from the affected-asset rollup (most-open) instead of trusting the source finding status when the two are out of sync.",
+    )
     parser.add_argument("--output-dir", default=None, help="Directory for generated PTRAC files.")
     parser.add_argument("--import-to-plextrac", action="store_true", default=None, help="Import generated PTRAC reports into PlexTrac.")
     parser.add_argument("--force-create-clients", action="store_true", default=None, help="Create missing PlexTrac clients during PTRAC import instead of skipping those reports.")
@@ -151,6 +157,7 @@ def apply_config_defaults(args: argparse.Namespace, config: Optional[dict] = Non
         "force_generate_ptrac": False,
         "import_to_plextrac": False,
         "force_create_clients": False,
+        "override_finding_status_from_assets": False,
     }
 
     for field_name, default_value in string_defaults.items():
@@ -491,6 +498,8 @@ def process_input_file(data_file_path: str, map_type: str, spec, args: argparse.
     )
     if finding_merge_strategy:
         parser.set_finding_merge_strategy(finding_merge_strategy)
+
+    parser.override_finding_status_from_assets = bool(getattr(args, "override_finding_status_from_assets", False))
 
     # Phase 2: parse rows into in-memory object arrays.
     with tracker.phase("parse_data") as ph:

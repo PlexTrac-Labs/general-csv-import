@@ -48,13 +48,13 @@ Finding mappings include merge metadata used by parser merge strategies. `SCALAR
 |---|---|
 | finding_assigned_to | Finding assigned to field. This should be a user email. If there is a Plextrac user with the same email, the finding will be assigned to them and show up on their dashboard. |
 | finding_created_at | Date the finding was created or first observed on |
-| finding_closed_at | Date the finding was closed on. If this value is added to a finding, the finding status will automatically be marked as Closed. |
+| finding_closed_at | Date the finding was closed on. Treated as a `Closed` status signal for the finding: it holds the finding `Closed` under the normal status-sync rules (see the note under Affected Assets). With `override_finding_status_from_assets` on, an open affected asset can still "unclose" the finding, in which case the stale close date is dropped. Conversely, a finding that resolves to `Closed` without a mapped close date is stamped with the parser run timestamp. |
 | finding_last_updated_at | Date the finding was last updated. If omitted, PTRAC generation uses the parser run timestamp. |
 | finding_description | Finding description field |
 | finding_recommendations | Finding recommendations field |
 | finding_references | Finding references field. You can use this key for multiple headers. Each value will be appended after a newline. |
 | finding_severity | Finding severity. Accepted values `Critical`, `High`, `Medium`, `Low`, `Informational`. Any other value will be set to `Informational` |
-| finding_status | Finding status. Accepted values `Open`, `In Process`, `Closed`. Any other values will be set to `Open` |
+| finding_status | Finding status. Accepted values `Open`, `In Process`, `Closed`. Kept in sync with affected-asset statuses (see the note under Affected Assets). |
 | finding_sub_status | Finding sub status |
 | finding_tag | A single tag value will be added as a finding tag. You can use this key for multiple headers. See tag format schema. For a comma delimited list of tags see `finding_multi_tag` below |
 | finding_multi_tag | List of comma delimited tags to be added as finding tags. See tag format schema. |
@@ -113,9 +113,24 @@ Finding mappings include merge metadata used by parser merge strategies. `SCALAR
 
 ## Affected Assets
 
+> **Finding / affected-asset status sync.** Generated PTRACs keep a finding's status in
+> sync with its affected assets, mirroring the platform's status-rollup worker. The
+> finding status is the **most open** status of its affected assets
+> (`Open` > `In Process` > `Closed`).
+>
+> - **Only `finding_status` mapped:** each affected asset adopts the finding status.
+> - **Only `affected_asset_status` mapped:** the finding status is derived from the
+>   affected-asset rollup (most open).
+> - **Both mapped:** the source data is treated as truth - both values are kept even if
+>   out of sync. A per-row missing value is still filled from the other. Set
+>   `override_finding_status_from_assets: true` (config) / `--override-finding-status-from-assets`
+>   to instead always derive the finding status from the affected-asset rollup, overriding
+>   a mapped finding status whenever the two disagree.
+> - **Neither mapped:** everything defaults to `Open`.
+
 | Key | Description |
 |---|---|
-| affected_asset_status | Asset status. Accepted values `Open`, `In Process`, `Closed`. Any other values will be set to `Open` |
+| affected_asset_status | Asset status. Accepted values `Open`, `In Process`, `Closed`. Kept in sync with the finding status (see note above). |
 | affected_asset_sub_status | Asset sub status |
 | affected_asset_ports | List of comma delimited ports to be added as affected ports to the Affected Asset specified with the `asset_name` key. Each port needs to contain a number, service, protocol and version. Single Port: `port\|service\|protocol\|version` Multiple Ports: `port\|service\|protocol\|version, port\|service\|protocol\|version` You could also add this key to multiple columns each with a single port. You can omit the service, protocol, or version by leaving it blank, but each port must still have 3 separator ( \| ) chars. Examples: Port Number Only: `port\|\|\|` Port Number and Protocol: `port\|\|protocol\|` |
 | affected_asset_evidence | Evidence to attach to the affected asset. The CSV column header becomes the evidence caption and the cell value becomes the code sample. You can use this key for multiple headers. |

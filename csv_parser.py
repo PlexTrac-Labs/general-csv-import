@@ -16,6 +16,12 @@ import mapping_utils.dradis_utils as dradis
 
 class CSVParser():
 
+    # Valid finding / affected-asset statuses, ordered from MOST open to LEAST open.
+    # A finding's rolled-up status is the most-open status among its affected assets,
+    # mirroring the platform's finding <-> affected-asset status-sync worker.
+    STATUS_ORDER = ["Open", "In Process", "Closed"]
+    DEFAULT_STATUS = "Open"
+
     # should have static header mapping build in when importing data for a static source
 
     # example key, value (key should be the same as header)
@@ -799,7 +805,10 @@ class CSVParser():
         'affected_asset_sid': {},   # {asset_sid: affected_fields_sid} - one affected-fields record per asset on the finding
         'title': None,
         'severity': "Informational",
-        'status': "Open",
+        # None = "not provided". Resolved to a concrete status by sync_statuses()
+        # (post-parse) so the finding/affected-asset statuses stay in sync the way
+        # the platform's status-rollup worker keeps them. Never left None in output.
+        'status': None,
         'description': "No description",
         'recommendations': "",
         'references': "",
@@ -870,7 +879,9 @@ class CSVParser():
 
     # template for created nested affected asset
     affected_asset_fields_mock = {
-        'status': "Open",
+        # None = "not provided" (see finding_template_mock['status']). Resolved by
+        # sync_statuses(); record-less assets are filled at generation time.
+        'status': None,
         'ports': {},
         'locationUrl': "",
         'vulnerableParameters': [],
@@ -901,6 +912,13 @@ class CSVParser():
         self.finding_merge_strategy = None
         self.finding_merge_sid_map = {}
         self.asset_merge_strategy = None
+
+        # Status sync (see sync_statuses). When both finding_status and
+        # affected_asset_status are mapped, the source data is treated as truth by
+        # default - both values are kept even if "out of sync". Setting this True
+        # instead always derives the finding status from the affected-asset rollup,
+        # overriding a mapped finding status whenever the two disagree.
+        self.override_finding_status_from_assets = False
 
         # Rich-text support. ``rich_text_source_format`` is the declared source
         # format of this import's rich-text fields (plain / markdown / textile /
@@ -1265,10 +1283,18 @@ class CSVParser():
 
         affected_asset.update(affected_asset_fields)
 
+        # assets with no affected-fields record (e.g. multi-name assets) have no status
+        # of their own; keep them in sync by adopting the finding's resolved status.
+        if affected_asset.get('status') is None:
+            affected_asset['status'] = finding.get('status')
+
         asset_id = asset['id']
         if asset_id in finding['affected_assets']:
             existing_affected_asset = finding['affected_assets'][asset_id]
-            existing_affected_asset['status'] = affected_asset.get('status', existing_affected_asset.get('status'))
+            # prefer the incoming status, but never overwrite a real status with a missing one
+            incoming_status = affected_asset.get('status')
+            if incoming_status is not None:
+                existing_affected_asset['status'] = incoming_status
             existing_affected_asset['locationUrl'] = affected_asset.get('locationUrl', "") if affected_asset.get('locationUrl', "") != "" else existing_affected_asset.get('locationUrl', "")
             existing_affected_asset['ports'].update(affected_asset.get('ports', {}))
             existing_affected_asset['vulnerableParameters'] = list(
@@ -1366,6 +1392,106 @@ class CSVParser():
                 elif self.asset_merge_strategy == "all_fields":   # merge duplicate evidence only when caption and code match
                     if _are_matching_evidence(evidence_to_keep, dup_evidence):
                         _drop(dup_evidence)
+
+
+    def _most_open_status(self, statuses):
+        """
+        Returns the most "open" status from an iterable of status strings, per
+        STATUS_ORDER (Open > In Process > Closed). Ignores None/invalid values.
+        Returns None when no valid status is present.
+        """
+        ranks = [self.STATUS_ORDER.index(s) for s in statuses if s in self.STATUS_ORDER]
+        if not ranks:
+            return None
+        return self.STATUS_ORDER[min(ranks)]
+
+
+    def sync_statuses(self):
+        """
+        Keep every finding's status in sync with its affected-asset statuses, matching
+        the platform worker that keeps finding <-> affected-asset statuses aligned.
+
+        The finding status should be the MOST OPEN status among its affected assets
+        (Open > In Process > Closed). This runs post-parse (after finding dup/merge
+        handling) so every finding and affected-asset record ends up with a concrete
+        status (never the None "not provided" sentinel).
+
+        Behavior depends on which fields the mapping actually populated:
+          - neither mapped: everything defaults to DEFAULT_STATUS (in sync).
+          - finding mapped only: each affected asset adopts the finding status.
+          - affected asset mapped only: the finding status is overridden with the
+            affected-asset rollup (most open).
+          - both mapped: the source data is treated as truth - both values are kept
+            even if out of sync. Per row, a missing value is still filled from the
+            other. If self.override_finding_status_from_assets is True, the finding
+            status is instead always derived from the affected-asset rollup,
+            overriding a mapped finding status whenever the two disagree.
+
+        Note: affected assets with no affected-fields record (e.g. multi-name assets)
+        carry no per-asset status here; they adopt the finding's resolved status at
+        generation time (see add_asset_to_finding), so they are not part of the rollup.
+
+        A close date (finding_closed_at) is treated as a finding-level "Closed" input
+        signal - it feeds the normal rules above rather than short-circuiting them. So
+        with the override off it holds the finding Closed (source is truth), but with the
+        override on the affected-asset rollup can still "unclose" the finding.
+
+        The close date itself is reconciled with the resolved status here so the parsed
+        objects are correct on their own: a finding resolved to Closed with no close date
+        is stamped with the run timestamp, and a stale close date on a finding that
+        resolved to a non-Closed status is dropped. PTRAC generation re-applies the same
+        reconciliation only as a safeguard.
+        """
+        finding_status_mapped = self.get_header_from_key("finding_status") is not None
+        asset_status_mapped = self.get_header_from_key("affected_asset_status") is not None
+
+        for finding in self.findings.values():
+            finding_raw = finding.get('status')
+            # a close date is a finding-level "Closed" signal; fold it into the finding's
+            # source status so the normal rules (including the override) can act on it
+            if finding.get('closedAt') is not None:
+                finding_raw = "Closed"
+
+            affected_records = [
+                self.affected_assets[affected_sid]
+                for affected_sid in finding.get('affected_asset_sid', {}).values()
+                if affected_sid in self.affected_assets
+            ]
+            provided_asset_statuses = [
+                record.get('status') for record in affected_records
+                if record.get('status') is not None
+            ]
+            rollup = self._most_open_status(provided_asset_statuses)
+
+            # 1) resolve the finding status
+            if asset_status_mapped and finding_status_mapped and self.override_finding_status_from_assets:
+                # override: the affected-asset rollup always drives the finding and may
+                # "unclose" a finding that only had a close date / mapped Closed status
+                finding_status = rollup or finding_raw or self.DEFAULT_STATUS
+            elif finding_raw is not None:
+                # a provided finding status (mapped status or a close date) is source-of-truth
+                finding_status = finding_raw
+            elif asset_status_mapped:
+                # no finding status provided -> derive from the affected-asset rollup
+                finding_status = rollup or self.DEFAULT_STATUS
+            else:
+                finding_status = self.DEFAULT_STATUS
+
+            finding['status'] = finding_status
+
+            # 2) reconcile the close date with the resolved status so the finding object
+            # is self-consistent (a Closed finding always has a close date; a non-Closed
+            # finding never does)
+            if finding_status == "Closed":
+                if finding.get('closedAt') is None:
+                    finding['closedAt'] = self.parser_time_milliseconds
+            else:
+                finding['closedAt'] = None
+
+            # 3) fill any affected asset missing a status from the resolved finding status
+            for record in affected_records:
+                if record.get('status') is None:
+                    record['status'] = finding_status
 
     #----------End post parsing handling functions----------
 
@@ -2245,6 +2371,8 @@ class CSVParser():
         # post parsing processing
         log.info(f'---Post parsing processing---')
         self.handle_finding_dup_names()
+        # keep finding <-> affected-asset statuses in sync (mirrors the platform worker)
+        self.sync_statuses()
         return True
 
 
@@ -2332,6 +2460,8 @@ class CSVParser():
                     # dates
                     if finding_info.get("createdAt") == None:
                         finding_info['createdAt'] = self.parser_time_milliseconds
+                    # safeguard: sync_statuses already reconciles closedAt with the finding
+                    # status during parsing; this keeps generation correct on its own too
                     if finding_info['status'] == "Closed":
                         if finding_info.get("closedAt") == None:
                             finding_info['closedAt'] = self.parser_time_milliseconds

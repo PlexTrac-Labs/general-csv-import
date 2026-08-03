@@ -236,6 +236,232 @@ def test_add_asset_to_finding_merges_existing_affected_asset_fields():
     assert affected_asset["notes"] == "first note\nsecond note"
 
 
+def _status_sync_parser(finding_status_mapped, asset_status_mapped, override=False):
+    """Build a parser whose header mapping reflects which status fields are mapped."""
+    parser = CSVParser()
+    parser.override_finding_status_from_assets = override
+    header_mapping = {}
+    if finding_status_mapped:
+        header_mapping["FS"] = {"header": "FS", "mapping_key": "finding_status", "col_index": 0}
+    if asset_status_mapped:
+        header_mapping["AS"] = {"header": "AS", "mapping_key": "affected_asset_status", "col_index": 1}
+    parser.csv_headers_mapping = header_mapping
+    return parser
+
+
+def _run_status_sync(parser, finding_status, asset_statuses):
+    """Set up one finding with the given raw statuses, sync, and return resolved values."""
+    parser.findings = {"f1": {"status": finding_status, "affected_asset_sid": {}}}
+    parser.affected_assets = {}
+    for i, status in enumerate(asset_statuses):
+        record_sid = f"r{i}"
+        parser.findings["f1"]["affected_asset_sid"][f"a{i}"] = record_sid
+        parser.affected_assets[record_sid] = {"status": status}
+    parser.sync_statuses()
+    resolved_assets = [
+        parser.affected_assets[sid]["status"]
+        for sid in parser.findings["f1"]["affected_asset_sid"].values()
+    ]
+    return parser.findings["f1"]["status"], resolved_assets
+
+
+def test_most_open_status_orders_open_over_closed():
+    parser = CSVParser()
+    assert parser._most_open_status(["Closed", "Open"]) == "Open"
+    assert parser._most_open_status(["Closed", "In Process"]) == "In Process"
+    assert parser._most_open_status(["Closed", "Closed"]) == "Closed"
+    assert parser._most_open_status([None, "bogus"]) is None
+
+
+def test_sync_statuses_neither_mapped_defaults_open():
+    parser = _status_sync_parser(finding_status_mapped=False, asset_status_mapped=False)
+    finding_status, asset_statuses = _run_status_sync(parser, None, [None])
+    assert finding_status == "Open"
+    assert asset_statuses == ["Open"]
+
+
+def test_sync_statuses_finding_mapped_only_fills_assets_from_finding():
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=False)
+    finding_status, asset_statuses = _run_status_sync(parser, "Closed", [None, None])
+    assert finding_status == "Closed"
+    assert asset_statuses == ["Closed", "Closed"]
+
+
+def test_sync_statuses_asset_mapped_only_rolls_up_to_finding():
+    parser = _status_sync_parser(finding_status_mapped=False, asset_status_mapped=True)
+    finding_status, asset_statuses = _run_status_sync(parser, None, ["Closed", "In Process"])
+    assert finding_status == "In Process"
+    assert asset_statuses == ["Closed", "In Process"]
+
+
+def test_sync_statuses_both_mapped_source_is_truth_keeps_out_of_sync():
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True)
+    finding_status, asset_statuses = _run_status_sync(parser, "Open", ["Closed"])
+    assert finding_status == "Open"
+    assert asset_statuses == ["Closed"]
+
+
+def test_sync_statuses_both_mapped_fills_missing_per_row_value():
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True)
+    # finding provided, one asset missing -> missing asset adopts finding status
+    finding_status, asset_statuses = _run_status_sync(parser, "Closed", [None, "Closed"])
+    assert finding_status == "Closed"
+    assert asset_statuses == ["Closed", "Closed"]
+    # finding missing, assets provided -> finding derived from rollup
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True)
+    finding_status, asset_statuses = _run_status_sync(parser, None, ["Closed"])
+    assert finding_status == "Closed"
+
+
+def test_sync_statuses_override_derives_finding_from_asset_rollup():
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True, override=True)
+    finding_status, asset_statuses = _run_status_sync(parser, "Open", ["Closed"])
+    assert finding_status == "Closed"
+    assert asset_statuses == ["Closed"]
+
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True, override=True)
+    finding_status, _ = _run_status_sync(parser, "Closed", ["Closed", "Open"])
+    assert finding_status == "Open"
+
+
+def test_sync_statuses_closed_at_forces_finding_closed():
+    # a close date is authoritative: finding is Closed and assets follow, even though the
+    # source finding status and asset statuses say Open
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True)
+    parser.findings = {
+        "f1": {"status": "Open", "closedAt": 1700000000000, "affected_asset_sid": {"a0": "r0"}}
+    }
+    parser.affected_assets = {"r0": {"status": None}}
+    parser.sync_statuses()
+    assert parser.findings["f1"]["status"] == "Closed"
+    assert parser.affected_assets["r0"]["status"] == "Closed"
+
+
+def test_sync_statuses_override_lets_assets_unclose_finding_with_close_date():
+    # corner case: override ON, all three present (close date + finding status + asset status).
+    # The open affected asset "uncloses" the finding, and the close date is ignored.
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True, override=True)
+    parser.findings = {
+        "f1": {"status": "Closed", "closedAt": 1700000000000, "affected_asset_sid": {"a0": "r0"}}
+    }
+    parser.affected_assets = {"r0": {"status": "Open"}}
+    parser.sync_statuses()
+    assert parser.findings["f1"]["status"] == "Open"
+    assert parser.affected_assets["r0"]["status"] == "Open"
+
+
+def test_sync_statuses_override_off_keeps_close_date_finding_closed():
+    # same inputs but override OFF: source is truth, finding stays Closed even though the
+    # affected asset is Open (the two may remain out of sync)
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True, override=False)
+    parser.findings = {
+        "f1": {"status": "Open", "closedAt": 1700000000000, "affected_asset_sid": {"a0": "r0"}}
+    }
+    parser.affected_assets = {"r0": {"status": "Open"}}
+    parser.sync_statuses()
+    assert parser.findings["f1"]["status"] == "Closed"
+    assert parser.affected_assets["r0"]["status"] == "Open"
+
+
+def test_sync_statuses_stamps_close_date_on_closed_finding():
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=False)
+    parser.findings = {"f1": {"status": "Closed", "affected_asset_sid": {}}}
+    parser.affected_assets = {}
+    parser.sync_statuses()
+    assert parser.findings["f1"]["closedAt"] == parser.parser_time_milliseconds
+
+
+def test_sync_statuses_drops_close_date_when_not_closed():
+    # override lets an open asset unclose the finding; the stale close date is dropped on
+    # the parsed object itself (not just at generation)
+    parser = _status_sync_parser(finding_status_mapped=True, asset_status_mapped=True, override=True)
+    parser.findings = {
+        "f1": {"status": "Closed", "closedAt": 1700000000000, "affected_asset_sid": {"a0": "r0"}}
+    }
+    parser.affected_assets = {"r0": {"status": "Open"}}
+    parser.sync_statuses()
+    assert parser.findings["f1"]["status"] == "Open"
+    assert parser.findings["f1"]["closedAt"] is None
+
+
+def test_parsed_finding_objects_are_status_consistent_without_generation():
+    mapping = {
+        "Title": {"header": "Title", "mapping_key": "finding_title", "col_index": 0},
+        "FStatus": {"header": "FStatus", "mapping_key": "finding_status", "col_index": 1},
+        "ClosedAt": {"header": "ClosedAt", "mapping_key": "finding_closed_at", "col_index": 2},
+    }
+    parser = CSVParser(header_mapping=mapping)
+    parser.doc_version = "3.1.0"
+    for header in mapping.values():
+        header["matched"] = True
+    # row 1: Closed with no date -> stamped; row 2: Open with no date -> closedAt is None
+    parser.csv_data = [["Vuln A", "Closed", ""], ["Vuln B", "Open", ""]]
+    assert parser.parse_data()
+    findings_by_title = {f["title"]: f for f in parser.findings.values()}
+    assert findings_by_title["Vuln A"]["status"] == "Closed"
+    assert findings_by_title["Vuln A"]["closedAt"] == parser.parser_time_milliseconds
+    assert findings_by_title["Vuln B"]["status"] == "Open"
+    assert findings_by_title["Vuln B"]["closedAt"] is None
+
+
+def test_generate_ptrac_override_drops_stale_close_date_when_unclosed():
+    mapping = {
+        "Title": {"header": "Title", "mapping_key": "finding_title", "col_index": 0},
+        "FStatus": {"header": "FStatus", "mapping_key": "finding_status", "col_index": 1},
+        "AStatus": {"header": "AStatus", "mapping_key": "affected_asset_status", "col_index": 2},
+        "Asset": {"header": "Asset", "mapping_key": "asset_name", "col_index": 3},
+        "ClosedAt": {"header": "ClosedAt", "mapping_key": "finding_closed_at", "col_index": 4},
+    }
+    parser = CSVParser(header_mapping=mapping)
+    parser.doc_version = "3.1.0"
+    parser.override_finding_status_from_assets = True
+    for header in mapping.values():
+        header["matched"] = True
+    parser.csv_data = [["Vuln A", "Closed", "Open", "host1", "01/15/2024"]]
+    assert parser.parse_data()
+    flaw = parser.generate_ptrac_json_data()[0]["flaws_array"][0]
+    assert flaw["status"] == "Open"
+    assert flaw["closedAt"] is None
+
+
+def test_generate_ptrac_sets_now_timestamp_for_closed_finding_without_close_date():
+    mapping = {
+        "Title": {"header": "Title", "mapping_key": "finding_title", "col_index": 0},
+        "FStatus": {"header": "FStatus", "mapping_key": "finding_status", "col_index": 1},
+    }
+    parser = CSVParser(header_mapping=mapping)
+    parser.doc_version = "3.1.0"
+    for header in mapping.values():
+        header["matched"] = True
+    parser.csv_data = [["Vuln A", "Closed"]]
+    assert parser.parse_data()
+    ptracs = parser.generate_ptrac_json_data()
+    flaw = ptracs[0]["flaws_array"][0]
+    assert flaw["status"] == "Closed"
+    # no close date was mapped, so it is stamped with the parser run timestamp
+    assert flaw["closedAt"] == parser.parser_time_milliseconds
+
+
+def test_generate_ptrac_preserves_mapped_close_date_and_forces_closed():
+    mapping = {
+        "Title": {"header": "Title", "mapping_key": "finding_title", "col_index": 0},
+        "FStatus": {"header": "FStatus", "mapping_key": "finding_status", "col_index": 1},
+        "ClosedAt": {"header": "ClosedAt", "mapping_key": "finding_closed_at", "col_index": 2},
+    }
+    parser = CSVParser(header_mapping=mapping)
+    parser.doc_version = "3.1.0"
+    for header in mapping.values():
+        header["matched"] = True
+    # source says Open, but a close date is present -> finding must be Closed and keep the date
+    parser.csv_data = [["Vuln A", "Open", "01/15/2024"]]
+    assert parser.parse_data()
+    ptracs = parser.generate_ptrac_json_data()
+    flaw = ptracs[0]["flaws_array"][0]
+    assert flaw["status"] == "Closed"
+    assert flaw["closedAt"] is not None
+    assert flaw["closedAt"] != parser.parser_time_milliseconds
+
+
 def test_affected_asset_evidence_mapping_adds_evidence_object():
     parser = CSVParser(
         header_mapping={

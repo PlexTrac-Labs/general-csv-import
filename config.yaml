@@ -107,6 +107,19 @@ output_dir:
 # Continue PTRAC generation after recoverable template/layout lookup errors.
 force_generate_ptrac: false
 
+# Finding <-> affected-asset status sync (mirrors the platform status-rollup worker).
+# Generated PTRACs always keep a finding's status in sync with its affected assets:
+# the finding status becomes the MOST OPEN status of its affected assets
+# (Open > In Process > Closed). If only finding status is mapped, affected assets
+# adopt it; if only affected asset status is mapped, the finding status is derived
+# from the asset rollup; if a per-row value is missing it is filled from the other.
+#
+# When BOTH finding status and affected asset status are mapped, the source data is
+# treated as truth by default (false) - both values are kept even if out of sync.
+# Set this to true to instead ALWAYS derive the finding status from the affected-asset
+# rollup, overriding a mapped finding status whenever the two disagree.
+override_finding_status_from_assets: false
+
 # Import generated PTRAC reports into PlexTrac (requires connection details).
 import_to_plextrac: false
 
